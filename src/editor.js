@@ -5,7 +5,6 @@ import {
   deleteJourneyEaseLocationGroupHelpers,
   easeJourneyLocationRangeStartEnd,
   equalizeJourneyLocationRangeSpeeds,
-  getJourneyLocationRangeSpeedStats,
   normalizeTimedJourney,
   rebuildJourneyEaseLocationGroup,
 } from '@found-in-space/journey';
@@ -25,14 +24,6 @@ import {
 const SAMPLE_STEP_SECS = 0.5;
 const TIMELINE_STEP_SECS = 0.05;
 const TILE_MODES = ['xy', 'xz', 'yz', 'perspective', 'skykit'];
-const TILE_LABELS = new Map([
-  ['xy', 'XY'],
-  ['xz', 'XZ'],
-  ['yz', 'YZ'],
-  ['perspective', 'Perspective'],
-  ['skykit', 'SkyKit'],
-]);
-
 /**
  * @param {import('./editor.d.ts').CreateJourneyVideoEditorOptions} [options]
  * @returns {import('./editor.d.ts').JourneyVideoEditor}
@@ -113,12 +104,13 @@ function createEditorModel(options) {
     options.onChange?.(document);
   }
 
-  function rebuild() {
+  function rebuild({ persistDocument = true } = {}) {
     evaluator = createTimedJourneyEvaluator(journey);
     samples = evaluator.sample({ stepSecs: SAMPLE_STEP_SECS });
     state.timeSecs = clamp(state.timeSecs, 0, journey.durationSecs);
     evaluated = evaluator.evaluate(state.timeSecs);
-    persist();
+    if (persistDocument) persist();
+    else document = createJourneyVideoEditorDocument({ journey, editorState: state, metadata: document.metadata });
   }
 
   return {
@@ -135,6 +127,13 @@ function createEditorModel(options) {
       state.selectedLocationRange = null;
       state.selectedLocationGroupId = null;
       state.selectedLocationGroupPhase = null;
+      rebuild();
+    },
+    loadDocument(nextDocument) {
+      assertActive();
+      document = importJourneyVideoEditorDocument(nextDocument);
+      journey = document.journey;
+      state = normalizeJourneyVideoEditorState(document.editorState);
       rebuild();
     },
     getJourney() {
@@ -169,6 +168,14 @@ function createEditorModel(options) {
       state.tileModes[Math.max(0, Math.min(3, Number(index) || 0))] = mode;
       persist();
     },
+    setDuration(durationSecs) {
+      assertActive();
+      journey = normalizeTimedJourney({
+        ...journey,
+        durationSecs: Math.max(0.1, Number(durationSecs) || journey.durationSecs),
+      });
+      rebuild();
+    },
     setZoom(zoom) {
       assertActive();
       state.zoom = clamp(Number(zoom), 0.35, 50);
@@ -197,6 +204,17 @@ function createEditorModel(options) {
     },
     updateWidgetPoint(type, id, point) {
       updateWidgetPoint(type, id, point);
+    },
+    updateWidgetTime(type, id, timeSecs) {
+      const target = findMutableWidget(journey, type, id);
+      if (!target || !('timeSecs' in target)) return;
+      target.timeSecs = snapTime(clamp(Number(timeSecs), 0, journey.durationSecs));
+      if (type === 'location') journey = { ...journey, locationWaypoints: sortByTime(journey.locationWaypoints) };
+      if (type === 'camera') journey = { ...journey, cameraLookWaypoints: sortByTime(journey.cameraLookWaypoints) };
+      rebuild();
+    },
+    patchWidget(type, id, patch) {
+      patchWidget(type, id, patch);
     },
     addLocation() {
       const frame = evaluated;
@@ -247,16 +265,35 @@ function createEditorModel(options) {
     deleteSelected() {
       const selected = state.selectedWidget;
       if (!selected) return;
-      if (selected.type === 'location') {
-        journey = { ...journey, locationWaypoints: journey.locationWaypoints.filter((entry) => entry.id !== selected.id) };
-      } else if (selected.type === 'camera') {
-        journey = { ...journey, cameraLookWaypoints: journey.cameraLookWaypoints.filter((entry) => entry.id !== selected.id) };
-      } else {
-        journey = { ...journey, guides: journey.guides.filter((entry) => entry.id !== selected.id) };
-      }
-      state.selectedWidget = null;
-      state.selectedLocationRange = null;
+      deleteWidget(selected.type, selected.id);
+    },
+    deleteWidget(type, id) {
+      deleteWidget(type, id);
+    },
+    equalizeLocationRange(anchorId, focusId) {
+      const result = equalizeJourneyLocationRangeSpeeds(journey.locationWaypoints, anchorId, focusId);
+      journey = { ...journey, locationWaypoints: result.locationWaypoints };
       rebuild();
+    },
+    easeLocationRange(anchorId, focusId) {
+      const result = easeJourneyLocationRangeStartEnd(journey.locationWaypoints, anchorId, focusId);
+      journey = { ...journey, locationWaypoints: result.locationWaypoints };
+      rebuild();
+    },
+    rebuildEaseGroup(groupId, phase) {
+      const result = rebuildJourneyEaseLocationGroup(journey.locationWaypoints, groupId, { phase });
+      journey = { ...journey, locationWaypoints: result.locationWaypoints };
+      rebuild();
+    },
+    deleteEaseHelpers(groupId, phase) {
+      const result = deleteJourneyEaseLocationGroupHelpers(journey.locationWaypoints, groupId, { phase });
+      journey = { ...journey, locationWaypoints: result.locationWaypoints };
+      rebuild();
+    },
+    selectLocationGroup(groupId, phase) {
+      state.selectedLocationGroupId = typeof groupId === 'string' ? groupId : null;
+      state.selectedLocationGroupPhase = phase === 'start' || phase === 'end' ? phase : null;
+      persist();
     },
     applyJourney(nextJourney) {
       journey = normalizeTimedJourney(nextJourney);
@@ -265,8 +302,8 @@ function createEditorModel(options) {
     exportDocument() {
       return exportJourneyVideoEditorDocument(document);
     },
-    getViewSnapshot() {
-      return createEditorViewSnapshot(journey, state, evaluated, samples, world);
+    getViewSnapshot(ui = {}) {
+      return createEditorViewSnapshot(journey, state, evaluated, samples, world, ui);
     },
     getSnapshot() {
       return {
@@ -300,6 +337,35 @@ function createEditorModel(options) {
     rebuild();
   }
 
+  function patchWidget(type, id, patch) {
+    const target = findMutableWidget(journey, type, id);
+    if (!target || !patch || typeof patch !== 'object') return;
+    const source = /** @type {Record<string, unknown>} */ (patch);
+    for (const [key, value] of Object.entries(source)) {
+      if (key === 'positionPc' || key === 'targetPc' || key === 'up') {
+        target[key] = clonePoint(value);
+      } else {
+        target[key] = value;
+      }
+    }
+    rebuild();
+  }
+
+  function deleteWidget(type, id) {
+    if (type === 'location') {
+      journey = { ...journey, locationWaypoints: journey.locationWaypoints.filter((entry) => entry.id !== id) };
+    } else if (type === 'camera') {
+      journey = { ...journey, cameraLookWaypoints: journey.cameraLookWaypoints.filter((entry) => entry.id !== id) };
+    } else if (type === 'guide') {
+      journey = { ...journey, guides: journey.guides.filter((entry) => entry.id !== id) };
+    } else {
+      return;
+    }
+    if (state.selectedWidget?.type === type && state.selectedWidget.id === id) state.selectedWidget = null;
+    state.selectedLocationRange = null;
+    rebuild();
+  }
+
   function assertActive() {
     if (disposed) throw new Error('JourneyVideoEditor has been disposed.');
   }
@@ -316,12 +382,15 @@ function mountEditor(host, model, options) {
   host.classList.add('fis-journey-video-editor-host');
   host.innerHTML = editorMarkup();
   const refs = queryRefs(host);
-  /** @type {Map<number, unknown>} */
-  const tileStates = new Map();
+  /** @type {Map<string, unknown>} */
+  const viewStates = new Map();
   const viewContextBase = {
     doc,
     preview: options.preview ?? {},
     world: model.world,
+    services: {
+      hasStorage: Boolean(options.storage),
+    },
     dispatch(action) {
       handleViewAction(action);
     },
@@ -330,47 +399,8 @@ function mountEditor(host, model, options) {
   /** @type {number | null} */
   let raf = null;
   let lastTick = performance.now();
-
-  refs.play.addEventListener('click', () => {
-    if (model.state.playing) model.pause();
-    else model.play();
-    startLoop();
-    renderAll();
-  });
-  refs.time.addEventListener('input', () => {
-    model.setTime(Number(refs.time.value));
-    renderAll();
-  });
-  refs.duration.addEventListener('change', () => {
-    model.applyJourney({ ...model.journey, durationSecs: Math.max(0.1, Number(refs.duration.value) || model.journey.durationSecs) });
-    renderAll();
-  });
-  refs.zoom.addEventListener('input', () => {
-    model.setZoom(Number(refs.zoom.value));
-    renderAll();
-  });
-  refs.exportJson.addEventListener('click', () => {
-    refs.json.value = JSON.stringify(model.getJourney(), null, 2);
-  });
-  refs.importJson.addEventListener('click', () => {
-    try {
-      model.setJourney(JSON.parse(refs.json.value));
-      renderAll();
-    } catch (error) {
-      reportError(error);
-    }
-  });
-  refs.downloadJson.addEventListener('click', () => downloadText(doc, `${model.journey.id || 'journey'}.json`, refs.json.value));
-  refs.addLocation.addEventListener('click', () => { model.addLocation(); renderAll(); });
-  refs.addCamera.addEventListener('click', () => { model.addCamera(); renderAll(); });
-  refs.addGuide.addEventListener('click', () => { model.addGuide(); renderAll(); });
-
-  for (const [index, tile] of refs.tiles.entries()) {
-    tile.select.addEventListener('change', () => {
-      model.setTileMode(index, tile.select.value);
-      renderAll();
-    });
-  }
+  let statusMessage = '';
+  let rendering = false;
 
   renderAll();
 
@@ -379,225 +409,41 @@ function mountEditor(host, model, options) {
     startLoop,
     async dispose() {
       if (raf != null) cancelAnimationFrame(raf);
-      for (const state of tileStates.values()) await state?.dispose?.();
+      for (const state of viewStates.values()) await state?.dispose?.();
       host.replaceChildren();
       host.classList.remove('fis-journey-video-editor-host');
     },
   };
 
   function renderAll() {
-    renderSidebar();
-    renderTimeline();
-    renderInspector();
-    renderTiles();
+    renderViews();
   }
 
-  function renderSidebar() {
-    refs.time.max = String(model.journey.durationSecs);
-    refs.time.value = String(model.state.timeSecs);
-    refs.timeLabel.textContent = `${model.state.timeSecs.toFixed(2)}s`;
-    refs.duration.value = String(model.journey.durationSecs);
-    refs.zoom.value = String(model.state.zoom);
-    refs.zoomLabel.textContent = `${Math.round(model.state.zoom * 100)}%`;
-    refs.play.textContent = model.state.playing ? 'Pause' : 'Play';
-    refs.json.value = JSON.stringify(model.getJourney(), null, 2);
-    refs.stats.time.textContent = `${model.state.timeSecs.toFixed(2)}s`;
-    refs.stats.position.textContent = pointText(model.evaluated.observerPc);
-    refs.stats.speed.textContent = `${model.evaluated.speedPcPerSec.toFixed(2)} pc/s`;
-    refs.stats.velocity.textContent = pointText(model.evaluated.velocityPcPerSec);
-    refs.stats.camera.textContent = pointText(model.evaluated.targetPc);
-    refs.guideList.replaceChildren(...model.journey.guides.map((guide) => {
-      const button = doc.createElement('button');
-      button.type = 'button';
-      button.className = 'jve-guide-chip';
-      button.textContent = guide.label ?? guide.id;
-      button.addEventListener('click', () => {
-        model.selectWidget('guide', guide.id);
-        renderAll();
+  function renderViews() {
+    if (rendering) return;
+    rendering = true;
+    try {
+      const snapshot = model.getViewSnapshot({
+        statusMessage,
+        hasStorage: Boolean(options.storage),
       });
-      return button;
-    }));
-  }
-
-  function renderTimeline() {
-    refs.locationLane.replaceChildren(...model.journey.locationWaypoints.map((waypoint, index) => createTimelineWidget('location', waypoint, String(index + 1))));
-    refs.cameraLane.replaceChildren(...model.journey.cameraLookWaypoints.map((waypoint, index) => createTimelineWidget('camera', waypoint, String(index + 1))));
-    refs.playhead.style.left = `${(model.state.timeSecs / Math.max(0.1, model.journey.durationSecs)) * 100}%`;
-  }
-
-  function createTimelineWidget(type, waypoint, label) {
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.className = 'jve-timeline-widget';
-    button.dataset.widgetType = type;
-    const group = waypoint.motionGroup;
-    if (group?.role) button.dataset.motionRole = String(group.role);
-    if (model.state.selectedWidget?.type === type && model.state.selectedWidget.id === waypoint.id) button.classList.add('is-selected');
-    button.style.left = `${(waypoint.timeSecs / Math.max(0.1, model.journey.durationSecs)) * 100}%`;
-    button.textContent = label;
-    button.addEventListener('click', (event) => {
-      model.selectWidget(type, waypoint.id, { extendRange: event.shiftKey });
-      renderAll();
-    });
-    button.addEventListener('pointerdown', (event) => beginTimelineDrag(event, waypoint, button));
-    return button;
-  }
-
-  function beginTimelineDrag(event, waypoint, button) {
-    event.preventDefault();
-    const track = button.parentElement;
-    const rect = track.getBoundingClientRect();
-    const move = (moveEvent) => {
-      const percent = clamp((moveEvent.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-      waypoint.timeSecs = snapTime(percent * model.journey.durationSecs);
-      model.applyJourney(model.journey);
-      renderAll();
-    };
-    const done = () => {
-      globalThis.removeEventListener('pointermove', move);
-      globalThis.removeEventListener('pointerup', done);
-    };
-    globalThis.addEventListener('pointermove', move);
-    globalThis.addEventListener('pointerup', done, { once: true });
-  }
-
-  function renderInspector() {
-    refs.inspector.replaceChildren();
-    const selected = model.state.selectedWidget;
-    const range = selectedLocationRangeInfo();
-    if (range) {
-      refs.inspector.append(renderRangeInspector(range));
-      return;
-    }
-    if (!selected) {
-      refs.inspector.append(paragraph('Select a timeline widget or path marker.'));
-      return;
-    }
-    const widget = findMutableWidget(model.journey, selected.type, selected.id);
-    if (!widget) {
-      refs.inspector.append(paragraph('Selected widget no longer exists.'));
-      return;
-    }
-    refs.inspector.append(renderWidgetInspector(selected, widget));
-  }
-
-  function renderRangeInspector(range) {
-    const section = panel('Location range');
-    const stats = getJourneyLocationRangeSpeedStats(model.journey.locationWaypoints, range.anchorId, range.focusId);
-    section.append(keyValueGrid([
-      ['from', range.anchorId],
-      ['to', range.focusId],
-      ['waypoints', String(stats?.waypointCount ?? 0)],
-      ['distance', `${(stats?.totalLengthPc ?? 0).toFixed(2)} pc`],
-      ['avg speed', `${(stats?.averageSpeedPcPerSec ?? 0).toFixed(2)} pc/s`],
-    ]));
-    const row = doc.createElement('div');
-    row.className = 'jve-button-row';
-    const equalize = button('Equalize speed', () => {
-      const result = equalizeJourneyLocationRangeSpeeds(model.journey.locationWaypoints, range.anchorId, range.focusId);
-      model.applyJourney({ ...model.journey, locationWaypoints: result.locationWaypoints });
-      renderAll();
-    });
-    const ease = button('Ease start/end', () => {
-      const result = easeJourneyLocationRangeStartEnd(model.journey.locationWaypoints, range.anchorId, range.focusId);
-      model.applyJourney({ ...model.journey, locationWaypoints: result.locationWaypoints });
-      renderAll();
-    });
-    row.append(equalize, ease);
-    section.append(row);
-    return section;
-  }
-
-  function renderWidgetInspector(selected, widget) {
-    const section = panel(`${selected.type} ${widget.id}`);
-    section.append(field('Time', numberInput(widget.timeSecs ?? model.state.timeSecs, (value) => {
-      widget.timeSecs = snapTime(value);
-      model.applyJourney(model.journey);
-      renderAll();
-    })));
-    if (selected.type === 'camera') {
-      if (widget.kind !== 'target') {
-        widget.kind = 'target';
-        widget.targetPc = { ...model.evaluated.targetPc };
-      }
-      section.append(vectorEditor('Target', widget.targetPc, (point) => {
-        widget.targetPc = point;
-        model.applyJourney(model.journey);
-        renderAll();
-      }));
-    } else {
-      const point = selected.type === 'guide' ? widget.positionPc : widget.positionPc;
-      section.append(vectorEditor('Position', point, (nextPoint) => {
-        widget.positionPc = nextPoint;
-        model.applyJourney(model.journey);
-        renderAll();
-      }));
-    }
-    if (selected.type === 'guide') {
-      section.append(field('Label', textInput(widget.label, (value) => {
-        widget.label = value;
-        model.applyJourney(model.journey);
-        renderAll();
-      })));
-      section.append(field('Color', colorInput(widget.color ?? '#8fd5ff', (value) => {
-        widget.color = value;
-        model.applyJourney(model.journey);
-        renderAll();
-      })));
-    }
-    if (selected.type === 'location' && widget.motionGroup?.id) {
-      const row = doc.createElement('div');
-      row.className = 'jve-button-row';
-      row.append(
-        button('Select ease group', () => {
-          model.state.selectedLocationGroupId = widget.motionGroup.id;
-          model.state.selectedLocationGroupPhase = widget.motionGroup.phase === 'start' || widget.motionGroup.phase === 'end' ? widget.motionGroup.phase : null;
-          renderAll();
-        }),
-        button('Rebuild ease', () => {
-          const result = rebuildJourneyEaseLocationGroup(model.journey.locationWaypoints, widget.motionGroup.id, { phase: widget.motionGroup.phase });
-          model.applyJourney({ ...model.journey, locationWaypoints: result.locationWaypoints });
-          renderAll();
-        }),
-        button('Delete ease helpers', () => {
-          const result = deleteJourneyEaseLocationGroupHelpers(model.journey.locationWaypoints, widget.motionGroup.id, { phase: widget.motionGroup.phase });
-          model.applyJourney({ ...model.journey, locationWaypoints: result.locationWaypoints });
-          renderAll();
-        }),
-      );
-      section.append(row);
-    }
-    section.append(button('Delete', () => { model.deleteSelected(); renderAll(); }, 'is-danger'));
-    return section;
-  }
-
-  function renderTiles() {
-    const snapshot = model.getViewSnapshot();
-    for (const [index, tile] of refs.tiles.entries()) {
-      const mode = model.state.tileModes[index] ?? 'xy';
-      tile.select.value = mode;
-      for (const entry of TILE_MODES) {
-        if (![...tile.select.options].some((option) => option.value === entry)) {
-          const option = doc.createElement('option');
-          option.value = entry;
-          option.textContent = TILE_LABELS.get(entry) ?? entry;
-          tile.select.append(option);
+      for (const slot of refs.viewSlots) {
+        let view = viewStates.get(slot.key);
+        if (!view || view.mode !== slot.mode) {
+          disposeView(view);
+          slot.body.replaceChildren();
+          view = createJourneyVideoEditorView(slot.mode, { index: slot.index });
+          viewStates.set(slot.key, view);
+          mountView(view, slot.body);
         }
+        view.update?.(snapshot);
       }
-      const current = tileStates.get(index);
-      if (current?.mode !== mode) {
-        disposeTileView(current);
-        tile.body.replaceChildren();
-        tileStates.delete(index);
-        const view = createJourneyVideoEditorView(mode);
-        tileStates.set(index, view);
-        mountTileView(view, tile.body);
-      }
-      tileStates.get(index)?.update?.(snapshot);
+    } finally {
+      rendering = false;
     }
   }
 
-  function mountTileView(view, body) {
+  function mountView(view, body) {
     try {
       Promise.resolve(view.mount({ ...viewContextBase, body })).catch(reportError);
     } catch (error) {
@@ -605,7 +451,7 @@ function mountEditor(host, model, options) {
     }
   }
 
-  function disposeTileView(view) {
+  function disposeView(view) {
     try {
       Promise.resolve(view?.dispose?.()).catch(reportError);
     } catch (error) {
@@ -613,20 +459,115 @@ function mountEditor(host, model, options) {
     }
   }
 
-  function handleViewAction(action) {
+  async function handleViewAction(action) {
+    try {
+      const didChange = await applyViewAction(action);
+      if (didChange !== false) renderAll();
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  async function applyViewAction(action) {
+    if (!action || typeof action !== 'object') return false;
     if (action.type === 'selectWidget') {
       model.selectWidget(String(action.widgetType), String(action.id), {
         extendRange: action.extendRange === true,
         keepRange: action.keepRange === true,
       });
-      renderAll();
-      return;
+      return true;
+    }
+    if (action.type === 'setTileMode') {
+      model.setTileMode(Number(action.index), String(action.mode));
+      return true;
+    }
+    if (action.type === 'setDuration') {
+      model.setDuration(Number(action.durationSecs));
+      return true;
+    }
+    if (action.type === 'setZoom') {
+      model.setZoom(Number(action.zoom));
+      return true;
+    }
+    if (action.type === 'setTime') {
+      model.setTime(Number(action.timeSecs));
+      return true;
+    }
+    if (action.type === 'togglePlaying') {
+      if (model.state.playing) model.pause();
+      else {
+        model.play();
+        startLoop();
+      }
+      return true;
+    }
+    if (action.type === 'addWidget') {
+      if (action.widgetType === 'location') model.addLocation();
+      if (action.widgetType === 'camera') model.addCamera();
+      if (action.widgetType === 'guide') model.addGuide();
+      return true;
+    }
+    if (action.type === 'deleteWidget') {
+      model.deleteWidget(String(action.widgetType), String(action.id));
+      return true;
+    }
+    if (action.type === 'updateWidgetTime') {
+      model.updateWidgetTime(String(action.widgetType), String(action.id), Number(action.timeSecs));
+      return true;
+    }
+    if (action.type === 'patchWidget') {
+      if (!action.patch || typeof action.patch !== 'object') return false;
+      model.patchWidget(String(action.widgetType), String(action.id), action.patch);
+      return true;
     }
     if (action.type === 'updateWidgetPoint') {
-      if (!action.pointPc || typeof action.pointPc !== 'object') return;
+      if (!action.pointPc || typeof action.pointPc !== 'object') return false;
       model.updateWidgetPoint(String(action.widgetType), String(action.id), action.pointPc);
-      renderAll();
+      return true;
     }
+    if (action.type === 'selectLocationGroup') {
+      model.selectLocationGroup(action.groupId, action.phase);
+      return true;
+    }
+    if (action.type === 'equalizeLocationRange') {
+      model.equalizeLocationRange(String(action.anchorId), String(action.focusId));
+      return true;
+    }
+    if (action.type === 'easeLocationRange') {
+      model.easeLocationRange(String(action.anchorId), String(action.focusId));
+      return true;
+    }
+    if (action.type === 'rebuildEaseGroup') {
+      model.rebuildEaseGroup(String(action.groupId), action.phase);
+      return true;
+    }
+    if (action.type === 'deleteEaseHelpers') {
+      model.deleteEaseHelpers(String(action.groupId), action.phase);
+      return true;
+    }
+    if (action.type === 'loadDocumentFile') {
+      model.loadDocument(String(action.text ?? ''));
+      statusMessage = action.filename
+        ? `Loaded ${action.filename}.`
+        : 'Loaded editor document.';
+      return true;
+    }
+    if (action.type === 'saveDocumentFile') {
+      const result = await saveTextFile(doc, `${model.journey.id || 'journey'}-editor.json`, model.exportDocument());
+      if (result === 'cancelled') {
+        statusMessage = 'Save cancelled.';
+      } else {
+        statusMessage = result === 'saved'
+          ? 'Saved editor document.'
+          : 'Saved editor document through browser download.';
+      }
+      return true;
+    }
+    if (action.type === 'clearStatus') {
+      statusMessage = '';
+      return true;
+    }
+    return false;
   }
 
   function startLoop() {
@@ -645,100 +586,10 @@ function mountEditor(host, model, options) {
     raf = requestAnimationFrame(tick);
   }
 
-  function selectedLocationRangeInfo() {
-    const range = model.state.selectedLocationRange;
-    if (!range) return null;
-    const ids = new Set(model.journey.locationWaypoints.map((waypoint) => waypoint.id));
-    return ids.has(range.anchorId) && ids.has(range.focusId) ? range : null;
-  }
-
   function reportError(error) {
     options.onError?.(error);
-    refs.status.textContent = error instanceof Error ? error.message : String(error);
-  }
-
-  function field(label, input) {
-    const wrapper = doc.createElement('label');
-    wrapper.append(span(label), input);
-    return wrapper;
-  }
-
-  function vectorEditor(label, point, onChange) {
-    const grid = doc.createElement('div');
-    grid.className = 'jve-vector-grid';
-    grid.append(span(label));
-    for (const axis of ['x', 'y', 'z']) {
-      grid.append(numberInput(point?.[axis] ?? 0, (value) => {
-        onChange({ ...point, [axis]: value });
-      }));
-    }
-    return grid;
-  }
-
-  function numberInput(value, onChange) {
-    const input = doc.createElement('input');
-    input.type = 'number';
-    input.step = '0.05';
-    input.value = formatNumber(value);
-    input.addEventListener('change', () => onChange(Number(input.value)));
-    return input;
-  }
-
-  function textInput(value, onChange) {
-    const input = doc.createElement('input');
-    input.value = String(value ?? '');
-    input.addEventListener('change', () => onChange(input.value));
-    return input;
-  }
-
-  function colorInput(value, onChange) {
-    const input = doc.createElement('input');
-    input.type = 'color';
-    input.value = /^#[0-9a-f]{6}$/iu.test(String(value)) ? String(value) : '#8fd5ff';
-    input.addEventListener('input', () => onChange(input.value));
-    return input;
-  }
-
-  function button(label, onClick, className = '') {
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.textContent = label;
-    if (className) button.className = className;
-    button.addEventListener('click', onClick);
-    return button;
-  }
-
-  function panel(title) {
-    const section = doc.createElement('section');
-    const heading = doc.createElement('h2');
-    heading.textContent = title;
-    section.append(heading);
-    return section;
-  }
-
-  function paragraph(text) {
-    const p = doc.createElement('p');
-    p.textContent = text;
-    return p;
-  }
-
-  function span(text) {
-    const value = doc.createElement('span');
-    value.textContent = text;
-    return value;
-  }
-
-  function keyValueGrid(rows) {
-    const grid = doc.createElement('dl');
-    grid.className = 'jve-key-value-grid';
-    for (const [key, value] of rows) {
-      const dt = doc.createElement('dt');
-      const dd = doc.createElement('dd');
-      dt.textContent = key;
-      dd.textContent = value;
-      grid.append(dt, dd);
-    }
-    return grid;
+    statusMessage = error instanceof Error ? error.message : String(error);
+    if (!rendering) renderAll();
   }
 }
 
@@ -746,50 +597,24 @@ function editorMarkup() {
   return `
     <div class="jve-shell">
       <aside class="jve-sidebar">
-        <h1>Journey Video Editor</h1>
-        <dl class="jve-stats">
-          <dt>Time</dt><dd data-stat="time">0.00s</dd>
-          <dt>Position</dt><dd data-stat="position">-</dd>
-          <dt>Speed</dt><dd data-stat="speed">-</dd>
-          <dt>Velocity</dt><dd data-stat="velocity">-</dd>
-          <dt>Camera</dt><dd data-stat="camera">-</dd>
-        </dl>
-        <label>Duration <input data-duration type="number" min="0.1" step="0.1"></label>
-        <div class="jve-button-row">
-          <button data-export-json type="button">Export JSON</button>
-          <button data-import-json type="button">Import JSON</button>
-          <button data-download-json type="button">Download</button>
-        </div>
-        <textarea data-json spellcheck="false"></textarea>
-        <div class="jve-button-row">
-          <button data-add-location type="button">Add Location</button>
-          <button data-add-camera type="button">Add Camera</button>
-          <button data-add-guide type="button">Add Guide</button>
-        </div>
-        <div data-guide-list class="jve-guide-list"></div>
-        <section data-inspector class="jve-inspector"></section>
-        <p data-status class="jve-status"></p>
+        <section class="jve-view jve-state-summary" data-view-slot="state-summary"></section>
+        <section class="jve-view jve-duration-view" data-view-slot="duration"></section>
+        <section class="jve-view jve-storage-view" data-view-slot="storage"></section>
+        <section class="jve-view jve-create-actions" data-view-slot="create-actions"></section>
+        <section class="jve-view jve-guide-flow-view" data-view-slot="guide-flow"></section>
+        <section class="jve-view jve-waypoint-editor" data-view-slot="waypoint-editor"></section>
+        <section class="jve-status" data-view-slot="status"></section>
       </aside>
       <main class="jve-main">
-        <div class="jve-view-toolbar">
-          <label>Zoom <input data-zoom type="range" min="0.35" max="50" step="0.05"><span data-zoom-label>100%</span></label>
-        </div>
+        <div class="jve-view-toolbar" data-view-slot="zoom"></div>
         <section class="jve-tile-grid">
           ${[0, 1, 2, 3].map((index) => `
-            <div class="jve-tile" data-tile="${index}">
-              <div class="jve-tile-toolbar"><select data-tile-mode></select></div>
-              <div class="jve-tile-body" data-tile-body></div>
-            </div>
+            <div class="jve-tile" data-view-slot="tile" data-view-index="${index}"></div>
           `).join('')}
         </section>
         <section class="jve-bottom-panel">
-          <div class="jve-transport"><button data-play type="button">Play</button><span data-time-label>0.00s</span></div>
-          <div class="jve-timeline">
-            <div data-playhead class="jve-playhead"></div>
-            <div class="jve-lane"><span>Time</span><div class="jve-lane-track"><input data-time type="range" min="0" step="0.05"></div></div>
-            <div class="jve-lane"><span>Loc</span><div class="jve-lane-track" data-lane-track="location"></div></div>
-            <div class="jve-lane"><span>Cam</span><div class="jve-lane-track" data-lane-track="camera"></div></div>
-          </div>
+          <div class="jve-transport" data-view-slot="transport"></div>
+          <div class="jve-timeline" data-view-slot="timeline"></div>
         </section>
       </main>
     </div>
@@ -799,47 +624,16 @@ function editorMarkup() {
 /** @param {Element} host */
 function queryRefs(host) {
   return {
-    play: must(host, '[data-play]'),
-    time: must(host, '[data-time]'),
-    timeLabel: must(host, '[data-time-label]'),
-    duration: must(host, '[data-duration]'),
-    zoom: must(host, '[data-zoom]'),
-    zoomLabel: must(host, '[data-zoom-label]'),
-    exportJson: must(host, '[data-export-json]'),
-    importJson: must(host, '[data-import-json]'),
-    downloadJson: must(host, '[data-download-json]'),
-    json: must(host, '[data-json]'),
-    addLocation: must(host, '[data-add-location]'),
-    addCamera: must(host, '[data-add-camera]'),
-    addGuide: must(host, '[data-add-guide]'),
-    guideList: must(host, '[data-guide-list]'),
-    inspector: must(host, '[data-inspector]'),
-    status: must(host, '[data-status]'),
-    playhead: must(host, '[data-playhead]'),
-    locationLane: must(host, '[data-lane-track="location"]'),
-    cameraLane: must(host, '[data-lane-track="camera"]'),
-    stats: {
-      time: must(host, '[data-stat="time"]'),
-      position: must(host, '[data-stat="position"]'),
-      speed: must(host, '[data-stat="speed"]'),
-      velocity: must(host, '[data-stat="velocity"]'),
-      camera: must(host, '[data-stat="camera"]'),
-    },
-    tiles: [...host.querySelectorAll('[data-tile]')].map((tile) => ({
-      el: tile,
-      select: must(tile, '[data-tile-mode]'),
-      body: must(tile, '[data-tile-body]'),
+    viewSlots: [...host.querySelectorAll('[data-view-slot]')].map((body, index) => ({
+      body,
+      key: `${body.getAttribute('data-view-slot')}:${body.getAttribute('data-view-index') ?? index}`,
+      mode: String(body.getAttribute('data-view-slot') ?? ''),
+      index: body.hasAttribute('data-view-index') ? Number(body.getAttribute('data-view-index')) : null,
     })),
   };
 }
 
-function must(root, selector) {
-  const value = root.querySelector(selector);
-  if (!value) throw new Error(`Journey video editor markup missing ${selector}.`);
-  return value;
-}
-
-function createEditorViewSnapshot(journey, state, evaluated, samples, world) {
+function createEditorViewSnapshot(journey, state, evaluated, samples, world, ui = {}) {
   const snapshotJourney = normalizeTimedJourney(journey);
   const snapshotSamples = samples.map(cloneFrame);
   return deepFreeze({
@@ -851,6 +645,10 @@ function createEditorViewSnapshot(journey, state, evaluated, samples, world) {
       bounds: computeJourneyBounds(snapshotJourney, snapshotSamples),
     },
     world,
+    ui: {
+      statusMessage: String(ui.statusMessage ?? ''),
+      hasStorage: ui.hasStorage === true,
+    },
   });
 }
 
@@ -902,14 +700,6 @@ function nextId(entries, prefix) {
   return `${prefix}-${index}`;
 }
 
-function pointText(point) {
-  return `${formatNumber(point?.x)} ${formatNumber(point?.y)} ${formatNumber(point?.z)}`;
-}
-
-function formatNumber(value) {
-  return Number(value ?? 0).toFixed(3).replace(/\.?0+$/u, '');
-}
-
 function snapTime(value) {
   return Math.round((Number(value) || 0) / TIMELINE_STEP_SECS) * TIMELINE_STEP_SECS;
 }
@@ -926,4 +716,31 @@ function downloadText(doc, filename, text) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+async function saveTextFile(doc, filename, text) {
+  const data = `${text.trim()}\n`;
+  const picker = doc.defaultView?.showSaveFilePicker;
+  if (typeof picker === 'function') {
+    try {
+      const handle = await picker.call(doc.defaultView, {
+        suggestedName: filename,
+        types: [
+          {
+            description: 'JSON files',
+            accept: { 'application/json': ['.json'] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([data], { type: 'application/json' }));
+      await writable.close();
+      return 'saved';
+    } catch (error) {
+      if (error?.name === 'AbortError') return 'cancelled';
+      throw error;
+    }
+  }
+  downloadText(doc, filename, data);
+  return 'downloaded';
 }

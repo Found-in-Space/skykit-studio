@@ -108,22 +108,39 @@ textarea {
   color: var(--accent);
 }
 
-.jve-sidebar label,
+.jve-view {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.jve-field,
 .jve-vector-grid {
   display: grid;
-  grid-template-columns: 86px 1fr;
+  grid-template-columns: minmax(64px, 86px) minmax(0, 1fr);
   gap: 8px;
   align-items: center;
+  min-width: 0;
 }
 
 .jve-vector-grid {
-  grid-template-columns: 86px repeat(3, 1fr);
+  grid-template-columns: minmax(64px, 86px) repeat(3, minmax(0, 1fr));
+}
+
+.jve-field input,
+.jve-vector-grid input {
+  width: 100%;
+  min-width: 0;
 }
 
 .jve-button-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.jve-destructive-row {
+  justify-content: flex-end;
 }
 
 .jve-stats,
@@ -151,6 +168,68 @@ textarea {
 
 .jve-guide-chip {
   color: var(--accent);
+}
+
+.jve-widget-flow {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jve-widget-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid rgba(143, 213, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.jve-widget-card.is-selected {
+  border-color: rgba(255, 180, 84, 0.7);
+}
+
+.jve-widget-card[data-motion-role="helper"] {
+  border-style: dashed;
+}
+
+.jve-widget-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.jve-widget-label,
+.jve-widget-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jve-widget-meta {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+.jve-widget-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jve-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .jve-inspector {

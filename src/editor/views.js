@@ -14,6 +14,7 @@ import {
 } from '@found-in-space/star-octree-provider';
 import { createObserverShellStrategy } from '@found-in-space/star-trees';
 import { createThreeStarField } from '@found-in-space/three-star-field';
+import { JOURNEY_VIDEO_EDITOR_TILE_MODES } from '../index.js';
 
 import {
   createJourneyProjectionTransform,
@@ -43,6 +44,7 @@ import {
  *   body: Element;
  *   preview?: Record<string, unknown>;
  *   world?: ReturnType<typeof createJourneyVideoWorld>;
+ *   services?: Record<string, unknown>;
  *   dispatch(action: Record<string, unknown>): void;
  *   reportError(error: unknown): void;
  * }} JourneyVideoEditorViewContext
@@ -54,14 +56,820 @@ import {
  *   samples: Array<Record<string, unknown>>;
  *   projectionData: Record<string, unknown>;
  *   world: ReturnType<typeof createJourneyVideoWorld>;
+ *   ui?: Record<string, unknown>;
  * }} JourneyVideoEditorViewSnapshot
  */
 
 /** @param {string} mode */
-export function createJourneyVideoEditorView(mode) {
+export function createJourneyVideoEditorView(mode, options = {}) {
+  if (mode === 'state-summary') return createStateSummaryView();
+  if (mode === 'duration') return createDurationView();
+  if (mode === 'storage') return createStorageView();
+  if (mode === 'create-actions') return createCreateActionsView();
+  if (mode === 'guide-flow') return createGuideFlowView();
+  if (mode === 'waypoint-editor') return createWaypointEditorView();
+  if (mode === 'status') return createStatusView();
+  if (mode === 'zoom') return createZoomView();
+  if (mode === 'transport') return createTransportView();
+  if (mode === 'timeline') return createTimelineView();
+  if (mode === 'tile') return createTileSlotView(Number(options.index ?? 0));
   if (mode === 'perspective') return createPerspectiveView();
   if (mode === 'skykit') return createSkykitView();
   return createProjectionView(mode);
+}
+
+function createStateSummaryView() {
+  let context = null;
+  let stats = null;
+  return {
+    mode: 'state-summary',
+    mount(nextContext) {
+      context = nextContext;
+      const title = nextContext.doc.createElement('h1');
+      title.textContent = 'Journey Video Editor';
+      stats = nextContext.doc.createElement('dl');
+      stats.className = 'jve-stats';
+      nextContext.body.replaceChildren(title, stats);
+    },
+    update(snapshot) {
+      if (!context || !stats) return;
+      stats.replaceChildren(...keyValueRows(context.doc, [
+        ['Time', `${Number(snapshot.editorState.timeSecs ?? 0).toFixed(2)}s`],
+        ['Position', pointText(snapshot.evaluated.observerPc)],
+        ['Speed', `${Number(snapshot.evaluated.speedPcPerSec ?? 0).toFixed(2)} pc/s`],
+        ['Velocity', pointText(snapshot.evaluated.velocityPcPerSec)],
+        ['Camera', pointText(snapshot.evaluated.targetPc)],
+      ]));
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+      stats = null;
+    },
+  };
+}
+
+function createDurationView() {
+  let context = null;
+  let input = null;
+  return {
+    mode: 'duration',
+    mount(nextContext) {
+      context = nextContext;
+      const label = nextContext.doc.createElement('label');
+      label.className = 'jve-field';
+      label.append(span(nextContext.doc, 'Duration'));
+      input = numberInput(nextContext.doc, 0, (value) => {
+        nextContext.dispatch({ type: 'setDuration', durationSecs: value });
+      }, { min: 0.1, step: 0.1 });
+      label.append(input);
+      nextContext.body.replaceChildren(label);
+    },
+    update(snapshot) {
+      if (!input || input === input.ownerDocument.activeElement) return;
+      input.value = formatNumber(snapshot.journey.durationSecs);
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+      input = null;
+    },
+  };
+}
+
+function createStorageView() {
+  let context = null;
+  let input = null;
+  return {
+    mode: 'storage',
+    mount(nextContext) {
+      context = nextContext;
+      const heading = panelHeading(nextContext.doc, 'Project');
+      const row = nextContext.doc.createElement('div');
+      row.className = 'jve-button-row';
+      input = nextContext.doc.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json,.json';
+      input.hidden = true;
+      input.addEventListener('change', async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        try {
+          nextContext.dispatch({
+            type: 'loadDocumentFile',
+            filename: file.name,
+            text: await file.text(),
+          });
+        } catch (error) {
+          nextContext.reportError(error);
+        } finally {
+          input.value = '';
+        }
+      });
+      row.append(
+        button(nextContext.doc, 'Load', () => input?.click()),
+        button(nextContext.doc, 'Save', () => nextContext.dispatch({ type: 'saveDocumentFile' })),
+      );
+      nextContext.body.replaceChildren(heading, row, input);
+    },
+    update() {},
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+      input = null;
+    },
+  };
+}
+
+function createCreateActionsView() {
+  let context = null;
+  return {
+    mode: 'create-actions',
+    mount(nextContext) {
+      context = nextContext;
+      const heading = panelHeading(nextContext.doc, 'Create');
+      const row = nextContext.doc.createElement('div');
+      row.className = 'jve-button-row';
+      row.append(
+        button(nextContext.doc, 'Add Location', () => nextContext.dispatch({ type: 'addWidget', widgetType: 'location' })),
+        button(nextContext.doc, 'Add Camera', () => nextContext.dispatch({ type: 'addWidget', widgetType: 'camera' })),
+        button(nextContext.doc, 'Add Guide', () => nextContext.dispatch({ type: 'addWidget', widgetType: 'guide' })),
+      );
+      nextContext.body.replaceChildren(heading, row);
+    },
+    update() {},
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+    },
+  };
+}
+
+function createGuideFlowView() {
+  let context = null;
+  return {
+    mode: 'guide-flow',
+    mount(nextContext) {
+      context = nextContext;
+    },
+    update(snapshot) {
+      if (!context) return;
+      const doc = context.doc;
+      const heading = panelHeading(doc, 'Guides');
+      const list = doc.createElement('div');
+      list.className = 'jve-widget-flow jve-guide-flow';
+      for (const guide of snapshot.journey.guides ?? []) {
+        list.append(renderGuideWidget(context, snapshot, guide));
+      }
+      if ((snapshot.journey.guides ?? []).length === 0) {
+        list.append(emptyText(doc, 'No guide volumes yet.'));
+      }
+      context.body.replaceChildren(heading, list);
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+    },
+  };
+}
+
+function createWaypointEditorView() {
+  let context = null;
+  return {
+    mode: 'waypoint-editor',
+    mount(nextContext) {
+      context = nextContext;
+    },
+    update(snapshot) {
+      if (!context) return;
+      const doc = context.doc;
+      const heading = panelHeading(doc, 'Waypoints');
+      const selectedRange = selectedLocationRangeInfo(snapshot);
+      if (selectedRange) {
+        context.body.replaceChildren(heading, renderRangeEditor(context, snapshot, selectedRange));
+        return;
+      }
+      const flow = doc.createElement('div');
+      flow.className = 'jve-widget-flow jve-waypoint-flow';
+      const entries = waypointEntries(snapshot);
+      for (const entry of entries) {
+        flow.append(renderWaypointFlowWidget(context, snapshot, entry));
+      }
+      if (entries.length === 0) flow.append(emptyText(doc, 'No time-based waypoints yet.'));
+      context.body.replaceChildren(heading, flow);
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+    },
+  };
+}
+
+function createStatusView() {
+  let context = null;
+  return {
+    mode: 'status',
+    mount(nextContext) {
+      context = nextContext;
+    },
+    update(snapshot) {
+      if (!context) return;
+      const message = String(snapshot.ui?.statusMessage ?? '');
+      context.body.textContent = message;
+      context.body.toggleAttribute('hidden', !message);
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+    },
+  };
+}
+
+function createZoomView() {
+  let context = null;
+  let input = null;
+  let value = null;
+  return {
+    mode: 'zoom',
+    mount(nextContext) {
+      context = nextContext;
+      const label = nextContext.doc.createElement('label');
+      label.className = 'jve-inline-control';
+      label.append(span(nextContext.doc, 'Zoom'));
+      input = nextContext.doc.createElement('input');
+      input.type = 'range';
+      input.min = '0.35';
+      input.max = '50';
+      input.step = '0.05';
+      input.addEventListener('input', () => {
+        nextContext.dispatch({ type: 'setZoom', zoom: Number(input.value) });
+      });
+      value = nextContext.doc.createElement('span');
+      label.append(input, value);
+      nextContext.body.replaceChildren(label);
+    },
+    update(snapshot) {
+      if (!input || !value) return;
+      if (input !== input.ownerDocument.activeElement) input.value = String(snapshot.editorState.zoom ?? 1);
+      value.textContent = `${Math.round(Number(snapshot.editorState.zoom ?? 1) * 100)}%`;
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+      input = null;
+      value = null;
+    },
+  };
+}
+
+function createTransportView() {
+  let context = null;
+  let play = null;
+  let time = null;
+  return {
+    mode: 'transport',
+    mount(nextContext) {
+      context = nextContext;
+      play = button(nextContext.doc, 'Play', () => nextContext.dispatch({ type: 'togglePlaying' }));
+      time = nextContext.doc.createElement('span');
+      nextContext.body.replaceChildren(play, time);
+    },
+    update(snapshot) {
+      if (!play || !time) return;
+      play.textContent = snapshot.editorState.playing ? 'Pause' : 'Play';
+      time.textContent = `${Number(snapshot.editorState.timeSecs ?? 0).toFixed(2)}s`;
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+      play = null;
+      time = null;
+    },
+  };
+}
+
+function createTimelineView() {
+  let context = null;
+  let timeInput = null;
+  let playhead = null;
+  let locationLane = null;
+  let cameraLane = null;
+  return {
+    mode: 'timeline',
+    mount(nextContext) {
+      context = nextContext;
+      playhead = nextContext.doc.createElement('div');
+      playhead.className = 'jve-playhead';
+      timeInput = nextContext.doc.createElement('input');
+      timeInput.type = 'range';
+      timeInput.min = '0';
+      timeInput.step = '0.05';
+      timeInput.addEventListener('input', () => {
+        nextContext.dispatch({ type: 'setTime', timeSecs: Number(timeInput.value) });
+      });
+      const timeLane = timelineLane(nextContext.doc, 'Time');
+      timeLane.track.append(timeInput);
+      const location = timelineLane(nextContext.doc, 'Loc');
+      const camera = timelineLane(nextContext.doc, 'Cam');
+      locationLane = location.track;
+      cameraLane = camera.track;
+      nextContext.body.replaceChildren(playhead, timeLane.el, location.el, camera.el);
+    },
+    update(snapshot) {
+      if (!timeInput || !playhead || !locationLane || !cameraLane) return;
+      const duration = Math.max(0.1, Number(snapshot.journey.durationSecs ?? 0));
+      timeInput.max = String(duration);
+      if (timeInput !== timeInput.ownerDocument.activeElement) {
+        timeInput.value = String(snapshot.editorState.timeSecs ?? 0);
+      }
+      playhead.style.left = `${(Number(snapshot.editorState.timeSecs ?? 0) / duration) * 100}%`;
+      locationLane.replaceChildren(...(snapshot.journey.locationWaypoints ?? []).map((waypoint, index) => (
+        renderTimelineWidget(context, snapshot, {
+          type: 'location',
+          waypoint,
+          label: String(index + 1),
+        })
+      )));
+      cameraLane.replaceChildren(...(snapshot.journey.cameraLookWaypoints ?? []).map((waypoint, index) => (
+        renderTimelineWidget(context, snapshot, {
+          type: 'camera',
+          waypoint,
+          label: String(index + 1),
+        })
+      )));
+    },
+    resize() {},
+    dispose() {
+      context?.body.replaceChildren();
+      context = null;
+      timeInput = null;
+      playhead = null;
+      locationLane = null;
+      cameraLane = null;
+    },
+  };
+}
+
+function createTileSlotView(index) {
+  let context = null;
+  let select = null;
+  let body = null;
+  let view = null;
+  let mountedMode = null;
+  return {
+    mode: 'tile',
+    mount(nextContext) {
+      context = nextContext;
+      const toolbar = nextContext.doc.createElement('div');
+      toolbar.className = 'jve-tile-toolbar';
+      select = nextContext.doc.createElement('select');
+      for (const mode of JOURNEY_VIDEO_EDITOR_TILE_MODES) {
+        const option = nextContext.doc.createElement('option');
+        option.value = mode;
+        option.textContent = tileLabel(mode);
+        select.append(option);
+      }
+      select.addEventListener('change', () => {
+        nextContext.dispatch({ type: 'setTileMode', index, mode: select.value });
+      });
+      toolbar.append(select);
+      body = nextContext.doc.createElement('div');
+      body.className = 'jve-tile-body';
+      nextContext.body.replaceChildren(toolbar, body);
+    },
+    update(snapshot) {
+      if (!context || !select || !body) return;
+      const mode = snapshot.editorState.tileModes?.[index] ?? 'xy';
+      select.value = mode;
+      if (mountedMode !== mode) {
+        disposeNestedView();
+        body.replaceChildren();
+        view = createJourneyVideoEditorView(mode);
+        mountedMode = mode;
+        try {
+          Promise.resolve(view.mount({ ...context, body })).catch(context.reportError);
+        } catch (error) {
+          context.reportError(error);
+          view = null;
+          mountedMode = null;
+          return;
+        }
+      }
+      view?.update?.(snapshot);
+    },
+    resize(size) {
+      view?.resize?.(size);
+    },
+    dispose() {
+      disposeNestedView();
+      context?.body.replaceChildren();
+      context = null;
+      select = null;
+      body = null;
+    },
+  };
+
+  function disposeNestedView() {
+    try {
+      Promise.resolve(view?.dispose?.()).catch((error) => context?.reportError?.(error));
+    } catch (error) {
+      context?.reportError?.(error);
+    }
+    view = null;
+    mountedMode = null;
+  }
+}
+
+function renderGuideWidget(context, snapshot, guide) {
+  const doc = context.doc;
+  const selected = isSelected(snapshot, 'guide', guide.id);
+  const card = doc.createElement('section');
+  card.className = 'jve-widget-card jve-guide-widget';
+  if (selected) card.classList.add('is-selected', 'is-expanded');
+  const summary = widgetSummary(context, {
+    type: 'guide',
+    id: guide.id,
+    label: guide.label ?? guide.id,
+    meta: pointText(guide.positionPc),
+    selected,
+  });
+  card.append(summary);
+  if (selected) {
+    const editor = doc.createElement('div');
+    editor.className = 'jve-widget-editor';
+    editor.append(
+      field(doc, 'Label', textInput(doc, guide.label ?? '', (value) => {
+        context.dispatch({ type: 'patchWidget', widgetType: 'guide', id: guide.id, patch: { label: value } });
+      })),
+      vectorEditor(doc, 'Position', guide.positionPc, (pointPc) => {
+        context.dispatch({ type: 'updateWidgetPoint', widgetType: 'guide', id: guide.id, pointPc });
+      }),
+      field(doc, 'Color', colorInput(doc, guide.color ?? '#8fd5ff', (value) => {
+        context.dispatch({ type: 'patchWidget', widgetType: 'guide', id: guide.id, patch: { color: value } });
+      })),
+      field(doc, 'Radius', numberInput(doc, guide.radiusPc ?? guide.sizePc ?? 1, (value) => {
+        context.dispatch({ type: 'patchWidget', widgetType: 'guide', id: guide.id, patch: { radiusPc: value, sizePc: value } });
+      }, { step: 0.05 })),
+      destructiveRow(doc, button(doc, 'Delete', () => {
+        context.dispatch({ type: 'deleteWidget', widgetType: 'guide', id: guide.id });
+      }, 'is-danger')),
+    );
+    card.append(editor);
+  }
+  return card;
+}
+
+function renderWaypointFlowWidget(context, snapshot, entry) {
+  const doc = context.doc;
+  const selected = isSelected(snapshot, entry.type, entry.waypoint.id);
+  const card = doc.createElement('section');
+  card.className = 'jve-widget-card jve-waypoint-widget';
+  card.dataset.widgetType = entry.type;
+  if (entry.waypoint.motionGroup?.role) card.dataset.motionRole = String(entry.waypoint.motionGroup.role);
+  if (selected) card.classList.add('is-selected', 'is-expanded');
+  card.append(widgetSummary(context, {
+    type: entry.type,
+    id: entry.waypoint.id,
+    label: entry.label,
+    meta: `${formatNumber(entry.waypoint.timeSecs)}s`,
+    selected,
+  }));
+  if (selected) card.append(renderWaypointEditor(context, snapshot, entry));
+  return card;
+}
+
+function renderWaypointEditor(context, snapshot, entry) {
+  const doc = context.doc;
+  const editor = doc.createElement('div');
+  editor.className = 'jve-widget-editor';
+  editor.append(field(doc, 'Time', numberInput(doc, entry.waypoint.timeSecs ?? 0, (timeSecs) => {
+    context.dispatch({ type: 'updateWidgetTime', widgetType: entry.type, id: entry.waypoint.id, timeSecs });
+  }, { step: 0.05 })));
+  if (entry.type === 'camera') {
+    editor.append(vectorEditor(doc, 'Target', entry.waypoint.targetPc ?? snapshot.evaluated.targetPc, (pointPc) => {
+      context.dispatch({ type: 'updateWidgetPoint', widgetType: 'camera', id: entry.waypoint.id, pointPc });
+    }));
+  } else {
+    editor.append(vectorEditor(doc, 'Position', entry.waypoint.positionPc, (pointPc) => {
+      context.dispatch({ type: 'updateWidgetPoint', widgetType: 'location', id: entry.waypoint.id, pointPc });
+    }));
+  }
+  if (entry.type === 'location' && entry.waypoint.motionGroup?.id) {
+    const group = entry.waypoint.motionGroup;
+    const row = doc.createElement('div');
+    row.className = 'jve-button-row';
+    row.append(
+      button(doc, 'Select ease group', () => {
+        context.dispatch({
+          type: 'selectLocationGroup',
+          groupId: group.id,
+          phase: group.phase === 'start' || group.phase === 'end' ? group.phase : null,
+        });
+      }),
+      button(doc, 'Rebuild ease', () => {
+        context.dispatch({ type: 'rebuildEaseGroup', groupId: group.id, phase: group.phase });
+      }),
+      button(doc, 'Delete ease helpers', () => {
+        context.dispatch({ type: 'deleteEaseHelpers', groupId: group.id, phase: group.phase });
+      }),
+    );
+    editor.append(row);
+  }
+  editor.append(destructiveRow(doc, button(doc, 'Delete', () => {
+    context.dispatch({ type: 'deleteWidget', widgetType: entry.type, id: entry.waypoint.id });
+  }, 'is-danger')));
+  return editor;
+}
+
+function renderRangeEditor(context, snapshot, range) {
+  const doc = context.doc;
+  const section = doc.createElement('section');
+  section.className = 'jve-widget-card is-expanded';
+  section.append(panelHeading(doc, 'Location range'));
+  section.append(keyValueGrid(doc, [
+    ['from', range.anchorId],
+    ['to', range.focusId],
+    ['waypoints', String(range.stats?.waypointCount ?? 0)],
+    ['distance', `${Number(range.stats?.totalLengthPc ?? 0).toFixed(2)} pc`],
+    ['avg speed', `${Number(range.stats?.averageSpeedPcPerSec ?? 0).toFixed(2)} pc/s`],
+  ]));
+  const row = doc.createElement('div');
+  row.className = 'jve-button-row';
+  row.append(
+    button(doc, 'Equalize speed', () => context.dispatch({ type: 'equalizeLocationRange', anchorId: range.anchorId, focusId: range.focusId })),
+    button(doc, 'Ease start/end', () => context.dispatch({ type: 'easeLocationRange', anchorId: range.anchorId, focusId: range.focusId })),
+  );
+  section.append(row);
+  return section;
+}
+
+function renderTimelineWidget(context, snapshot, entry) {
+  const doc = context.doc;
+  const buttonEl = button(doc, entry.label, (event) => {
+    context.dispatch({
+      type: 'selectWidget',
+      widgetType: entry.type,
+      id: entry.waypoint.id,
+      extendRange: event.shiftKey,
+    });
+  });
+  buttonEl.className = 'jve-timeline-widget';
+  buttonEl.dataset.widgetType = entry.type;
+  if (entry.waypoint.motionGroup?.role) buttonEl.dataset.motionRole = String(entry.waypoint.motionGroup.role);
+  if (isSelected(snapshot, entry.type, entry.waypoint.id)) buttonEl.classList.add('is-selected');
+  const duration = Math.max(0.1, Number(snapshot.journey.durationSecs ?? 0));
+  buttonEl.style.left = `${(Number(entry.waypoint.timeSecs ?? 0) / duration) * 100}%`;
+  buttonEl.addEventListener('pointerdown', (event) => beginTimelineDrag(context, snapshot, entry, buttonEl, event));
+  return buttonEl;
+}
+
+function beginTimelineDrag(context, snapshot, entry, buttonEl, event) {
+  event.preventDefault();
+  context.dispatch({
+    type: 'selectWidget',
+    widgetType: entry.type,
+    id: entry.waypoint.id,
+    extendRange: event.shiftKey,
+  });
+  const track = buttonEl.parentElement;
+  if (!track) return;
+  const rect = track.getBoundingClientRect();
+  const duration = Math.max(0.1, Number(snapshot.journey.durationSecs ?? 0));
+  const move = (moveEvent) => {
+    const percent = clamp((moveEvent.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+    context.dispatch({
+      type: 'updateWidgetTime',
+      widgetType: entry.type,
+      id: entry.waypoint.id,
+      timeSecs: snapTime(percent * duration),
+    });
+  };
+  const done = () => {
+    globalThis.removeEventListener('pointermove', move);
+    globalThis.removeEventListener('pointerup', done);
+  };
+  globalThis.addEventListener('pointermove', move);
+  globalThis.addEventListener('pointerup', done, { once: true });
+}
+
+function widgetSummary(context, options) {
+  const doc = context.doc;
+  const summary = button(doc, '', (event) => {
+    context.dispatch({
+      type: 'selectWidget',
+      widgetType: options.type,
+      id: options.id,
+      extendRange: event.shiftKey,
+    });
+  });
+  summary.className = 'jve-widget-summary';
+  const label = doc.createElement('span');
+  label.className = 'jve-widget-label';
+  label.textContent = String(options.label ?? options.id);
+  const meta = doc.createElement('span');
+  meta.className = 'jve-widget-meta';
+  meta.textContent = String(options.meta ?? '');
+  summary.append(label, meta);
+  return summary;
+}
+
+function waypointEntries(snapshot) {
+  const entries = [
+    ...(snapshot.journey.locationWaypoints ?? []).map((waypoint, index) => ({
+      type: 'location',
+      waypoint,
+      label: waypoint.id ?? `Location ${index + 1}`,
+    })),
+    ...(snapshot.journey.cameraLookWaypoints ?? []).map((waypoint, index) => ({
+      type: 'camera',
+      waypoint,
+      label: waypoint.id ?? `Camera ${index + 1}`,
+    })),
+  ];
+  return entries.sort((left, right) => (
+    Number(left.waypoint.timeSecs ?? 0) - Number(right.waypoint.timeSecs ?? 0)
+    || (left.type === right.type ? 0 : left.type.localeCompare(right.type))
+    || String(left.waypoint.id ?? '').localeCompare(String(right.waypoint.id ?? ''))
+  ));
+}
+
+function selectedLocationRangeInfo(snapshot) {
+  const range = snapshot.editorState.selectedLocationRange;
+  if (!range) return null;
+  const ids = new Set((snapshot.journey.locationWaypoints ?? []).map((waypoint) => waypoint.id));
+  if (!ids.has(range.anchorId) || !ids.has(range.focusId)) return null;
+  const selected = (snapshot.journey.locationWaypoints ?? [])
+    .filter((waypoint) => waypoint.id === range.anchorId || waypoint.id === range.focusId);
+  const [left, right] = selected.sort((a, b) => Number(a.timeSecs ?? 0) - Number(b.timeSecs ?? 0));
+  const minTime = Number(left?.timeSecs ?? 0);
+  const maxTime = Number(right?.timeSecs ?? minTime);
+  const waypoints = (snapshot.journey.locationWaypoints ?? [])
+    .filter((waypoint) => Number(waypoint.timeSecs ?? 0) >= minTime && Number(waypoint.timeSecs ?? 0) <= maxTime)
+    .sort((a, b) => Number(a.timeSecs ?? 0) - Number(b.timeSecs ?? 0));
+  let totalLengthPc = 0;
+  for (let index = 1; index < waypoints.length; index += 1) {
+    totalLengthPc += pointDistance(waypoints[index - 1].positionPc, waypoints[index].positionPc);
+  }
+  const durationSecs = Math.max(0, maxTime - minTime);
+  return {
+    ...range,
+    stats: {
+      waypointCount: waypoints.length,
+      totalLengthPc,
+      averageSpeedPcPerSec: durationSecs > 0 ? totalLengthPc / durationSecs : 0,
+    },
+  };
+}
+
+function pointDistance(left, right) {
+  return Math.hypot(
+    Number(right?.x ?? 0) - Number(left?.x ?? 0),
+    Number(right?.y ?? 0) - Number(left?.y ?? 0),
+    Number(right?.z ?? 0) - Number(left?.z ?? 0),
+  );
+}
+
+function timelineLane(doc, labelText) {
+  const el = doc.createElement('div');
+  el.className = 'jve-lane';
+  const label = doc.createElement('span');
+  label.textContent = labelText;
+  const track = doc.createElement('div');
+  track.className = 'jve-lane-track';
+  el.append(label, track);
+  return { el, track };
+}
+
+function field(doc, labelText, input) {
+  const wrapper = doc.createElement('label');
+  wrapper.className = 'jve-field';
+  wrapper.append(span(doc, labelText), input);
+  return wrapper;
+}
+
+function vectorEditor(doc, labelText, point, onChange) {
+  const grid = doc.createElement('div');
+  grid.className = 'jve-vector-grid';
+  grid.append(span(doc, labelText));
+  for (const axis of ['x', 'y', 'z']) {
+    grid.append(numberInput(doc, point?.[axis] ?? 0, (value) => {
+      onChange({ ...point, [axis]: value });
+    }, { step: 0.05 }));
+  }
+  return grid;
+}
+
+function numberInput(doc, value, onChange, options = {}) {
+  const input = doc.createElement('input');
+  input.type = 'number';
+  input.step = String(options.step ?? 0.05);
+  if (options.min !== undefined) input.min = String(options.min);
+  input.value = formatNumber(value);
+  input.addEventListener('change', () => onChange(Number(input.value)));
+  return input;
+}
+
+function textInput(doc, value, onChange) {
+  const input = doc.createElement('input');
+  input.value = String(value ?? '');
+  input.addEventListener('change', () => onChange(input.value));
+  return input;
+}
+
+function colorInput(doc, value, onChange) {
+  const input = doc.createElement('input');
+  input.type = 'color';
+  input.value = /^#[0-9a-f]{6}$/iu.test(String(value)) ? String(value) : '#8fd5ff';
+  input.addEventListener('input', () => onChange(input.value));
+  return input;
+}
+
+function button(doc, label, onClick, className = '') {
+  const buttonEl = doc.createElement('button');
+  buttonEl.type = 'button';
+  buttonEl.textContent = label;
+  if (className) buttonEl.className = className;
+  buttonEl.addEventListener('click', onClick);
+  return buttonEl;
+}
+
+function destructiveRow(doc, child) {
+  const row = doc.createElement('div');
+  row.className = 'jve-button-row jve-destructive-row';
+  row.append(child);
+  return row;
+}
+
+function panelHeading(doc, text) {
+  const heading = doc.createElement('h2');
+  heading.textContent = text;
+  return heading;
+}
+
+function emptyText(doc, text) {
+  const paragraph = doc.createElement('p');
+  paragraph.className = 'jve-empty';
+  paragraph.textContent = text;
+  return paragraph;
+}
+
+function span(doc, text) {
+  const value = doc.createElement('span');
+  value.textContent = text;
+  return value;
+}
+
+function keyValueGrid(doc, rows) {
+  const grid = doc.createElement('dl');
+  grid.className = 'jve-key-value-grid';
+  grid.append(...keyValueRows(doc, rows));
+  return grid;
+}
+
+function keyValueRows(doc, rows) {
+  const nodes = [];
+  for (const [key, value] of rows) {
+    const dt = doc.createElement('dt');
+    const dd = doc.createElement('dd');
+    dt.textContent = key;
+    dd.textContent = value;
+    nodes.push(dt, dd);
+  }
+  return nodes;
+}
+
+function tileLabel(mode) {
+  if (mode === 'xy') return 'XY';
+  if (mode === 'xz') return 'XZ';
+  if (mode === 'yz') return 'YZ';
+  if (mode === 'perspective') return 'Perspective';
+  if (mode === 'skykit') return 'SkyKit';
+  return mode;
+}
+
+function pointText(point) {
+  return `${formatNumber(point?.x)} ${formatNumber(point?.y)} ${formatNumber(point?.z)}`;
+}
+
+function formatNumber(value) {
+  return Number(value ?? 0).toFixed(3).replace(/\.?0+$/u, '');
+}
+
+function snapTime(value) {
+  return Math.round((Number(value) || 0) / 0.05) * 0.05;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number.isFinite(Number(value)) ? Number(value) : min));
 }
 
 /** @param {string} mode */
