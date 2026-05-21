@@ -13,6 +13,10 @@ import {
 import { createObserverShellStrategy } from '@found-in-space/star-trees';
 import { createThreeStarField } from '@found-in-space/three-star-field';
 import { normalizeJourneyVideoLayout } from '@found-in-space/journey-video/export';
+import {
+  createJourneyVideoGuideGroup,
+  createJourneyVideoWorld,
+} from '../../src/world.js';
 
 const DEFAULT_COORDINATE_UNITS_PER_PARSEC = 0.02;
 const DEFAULT_LIMITING_MAGNITUDE = 6.5;
@@ -31,6 +35,7 @@ let state = {
   viewer: null,
   renderer: null,
   camera: null,
+  world: null,
   starPlugin: null,
   starField: null,
   guideGroup: null,
@@ -82,9 +87,11 @@ async function configure(options = {}) {
 
   try {
     const layout = normalizeJourneyVideoLayout(options.profile?.layout);
-    const coordinateUnitsPerParsec = Number(options.coordinateUnitsPerParsec)
-      || DEFAULT_COORDINATE_UNITS_PER_PARSEC;
-    const limitingMagnitude = Number(options.limitingMagnitude) || DEFAULT_LIMITING_MAGNITUDE;
+    const world = createJourneyVideoWorld({
+      coordinateUnitsPerParsec: Number(options.coordinateUnitsPerParsec) || DEFAULT_COORDINATE_UNITS_PER_PARSEC,
+      limitingMagnitude: Number(options.limitingMagnitude) || DEFAULT_LIMITING_MAGNITUDE,
+      renderScale: 1,
+    });
 
     host.style.width = `${layout.width}px`;
     host.style.height = `${layout.height}px`;
@@ -106,12 +113,16 @@ async function configure(options = {}) {
       persistentCache: options.persistentCache ?? 'off',
     });
     const starField = createThreeStarField({
-      renderScale: 1,
-      limitingMagnitude,
-      coordinateUnitsPerParsec,
+      renderScale: world.renderScale,
+      limitingMagnitude: world.limitingMagnitude,
+      coordinateUnitsPerParsec: world.coordinateUnitsPerParsec,
       exposure: Number(options.exposure) || 2400,
     });
-    const guideGroup = createGuideGroup(state.evaluator.journey, coordinateUnitsPerParsec);
+    const guideGroup = createJourneyVideoGuideGroup(state.evaluator.journey, world, {
+      defaultOpacity: 0.36,
+      sphereWidthSegments: 48,
+      sphereHeightSegments: 24,
+    });
     const starPlugin = createStreamingStarsPlugin({
       id: 'journey-video-stars',
       provider,
@@ -130,8 +141,8 @@ async function configure(options = {}) {
       renderer,
       camera,
       view: {
-        limitingMagnitude,
-        coordinateUnitsPerParsec,
+        limitingMagnitude: world.limitingMagnitude,
+        coordinateUnitsPerParsec: world.coordinateUnitsPerParsec,
       },
       plugins: [
         starPlugin,
@@ -151,6 +162,7 @@ async function configure(options = {}) {
       viewer,
       renderer,
       camera,
+      world,
       starPlugin,
       starField,
       guideGroup,
@@ -175,7 +187,7 @@ async function seekFrame(input = {}) {
     observerPc: frame.observerPc,
     orientationIcrs: frame.orientationIcrs,
     targetPc: frame.targetPc,
-    limitingMagnitude: Number(state.profile?.limitingMagnitude) || DEFAULT_LIMITING_MAGNITUDE,
+    limitingMagnitude: state.world?.limitingMagnitude ?? DEFAULT_LIMITING_MAGNITUDE,
     motion: {
       velocityPcPerSec: frame.velocityPcPerSec,
       speedPcPerSec: frame.speedPcPerSec,
@@ -241,6 +253,7 @@ async function dispose() {
     viewer: null,
     renderer: null,
     camera: null,
+    world: null,
     starPlugin: null,
     starField: null,
     guideGroup: null,
@@ -311,35 +324,6 @@ async function waitForStarsCurrent(timeoutMs) {
     state.viewer?.frame?.(0);
   }
   throw new Error(`Timed out waiting for streamed stars to become current after ${timeoutMs}ms.`);
-}
-
-function createGuideGroup(journey, coordinateUnitsPerParsec) {
-  const group = new THREE.Group();
-  group.name = 'journey-video-guides';
-  for (const guide of journey.guides ?? []) {
-    const color = new THREE.Color(guide.color ?? '#74d8ff');
-    const opacity = clamp(Number(guide.opacity ?? 0.36), 0, 1);
-    const material = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      wireframe: opacity < 0.35,
-      depthWrite: false,
-    });
-    const size = Number(guide.sizePc ?? guide.radiusPc ?? 1) * coordinateUnitsPerParsec;
-    const geometry = guide.shape === 'cube'
-      ? new THREE.BoxGeometry(size, size, size)
-      : new THREE.SphereGeometry(Math.max(0.001, size), 48, 24);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = guide.id ?? guide.label ?? 'journey-guide';
-    mesh.position.set(
-      Number(guide.positionPc?.x ?? 0) * coordinateUnitsPerParsec,
-      Number(guide.positionPc?.y ?? 0) * coordinateUnitsPerParsec,
-      Number(guide.positionPc?.z ?? 0) * coordinateUnitsPerParsec,
-    );
-    group.add(mesh);
-  }
-  return group;
 }
 
 function drawOverlayBlock(context, layout, block) {

@@ -44,7 +44,7 @@ const editor = createJourneyVideoEditor({
   storage,
   preview: {
     skykit: true,
-    renderScale: 0.02,
+    renderScale: 1,
     coordinateUnitsPerParsec: 0.02,
     limitingMagnitude: 6.5,
   },

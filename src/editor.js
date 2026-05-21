@@ -1,6 +1,4 @@
 // @ts-nocheck
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 import {
   createTimedJourneyEvaluator,
@@ -11,18 +9,6 @@ import {
   normalizeTimedJourney,
   rebuildJourneyEaseLocationGroup,
 } from '@found-in-space/journey';
-import {
-  createObject3dPlugin,
-  createSkykitAnimationLoop,
-  createSkykitViewer,
-  createStreamingStarsPlugin,
-} from '@found-in-space/skykit';
-import {
-  OCTREE_DEFAULT,
-  createStarOctreeProviderService,
-} from '@found-in-space/star-octree-provider';
-import { createObserverShellStrategy } from '@found-in-space/star-trees';
-import { createThreeStarField } from '@found-in-space/three-star-field';
 
 import {
   createJourneyVideoEditorDocument,
@@ -30,12 +16,10 @@ import {
   importJourneyVideoEditorDocument,
   normalizeJourneyVideoEditorState,
 } from './index.js';
+import { createJourneyVideoWorld } from './world.js';
+import { createJourneyVideoEditorView } from './editor/views.js';
 import {
   computeJourneyBounds,
-  createJourneyEditorProjectionData,
-  createJourneyProjectionTransform,
-  hitJourneyEditorMarker,
-  projectJourneyEditorPoint,
 } from './editor/projection.js';
 
 const SAMPLE_STEP_SECS = 0.5;
@@ -103,6 +87,9 @@ export function createJourneyVideoEditor(options = {}) {
 }
 
 /**
+ * Internal editor store. Tile views only see immutable snapshots from here and
+ * send mutations back through dispatch actions.
+ *
  * @param {import('./editor.d.ts').CreateJourneyVideoEditorOptions} options
  */
 function createEditorModel(options) {
@@ -117,6 +104,7 @@ function createEditorModel(options) {
   let evaluator = createTimedJourneyEvaluator(journey);
   let samples = evaluator.sample({ stepSecs: SAMPLE_STEP_SECS });
   let evaluated = evaluator.evaluate(state.timeSecs);
+  const world = createJourneyVideoWorld(options.preview);
   let disposed = false;
 
   function persist() {
@@ -139,6 +127,7 @@ function createEditorModel(options) {
     get evaluator() { return evaluator; },
     get samples() { return samples; },
     get evaluated() { return evaluated; },
+    get world() { return world; },
     setJourney(nextJourney) {
       assertActive();
       journey = normalizeTimedJourney(nextJourney);
@@ -204,12 +193,10 @@ function createEditorModel(options) {
     updateSelectedPoint(point) {
       const selected = state.selectedWidget;
       if (!selected) return;
-      const target = findMutableWidget(journey, selected.type, selected.id);
-      if (!target) return;
-      if (selected.type === 'location') target.positionPc = { ...point };
-      if (selected.type === 'guide') target.positionPc = { ...point };
-      if (selected.type === 'camera' && target.kind === 'target') target.targetPc = { ...point };
-      rebuild();
+      updateWidgetPoint(selected.type, selected.id, point);
+    },
+    updateWidgetPoint(type, id, point) {
+      updateWidgetPoint(type, id, point);
     },
     addLocation() {
       const frame = evaluated;
@@ -278,6 +265,9 @@ function createEditorModel(options) {
     exportDocument() {
       return exportJourneyVideoEditorDocument(document);
     },
+    getViewSnapshot() {
+      return createEditorViewSnapshot(journey, state, evaluated, samples, world);
+    },
     getSnapshot() {
       return {
         disposed,
@@ -300,6 +290,16 @@ function createEditorModel(options) {
     },
   };
 
+  function updateWidgetPoint(type, id, point) {
+    const target = findMutableWidget(journey, type, id);
+    if (!target) return;
+    const nextPoint = clonePoint(point);
+    if (type === 'location') target.positionPc = nextPoint;
+    if (type === 'guide') target.positionPc = nextPoint;
+    if (type === 'camera' && target.kind === 'target') target.targetPc = nextPoint;
+    rebuild();
+  }
+
   function assertActive() {
     if (disposed) throw new Error('JourneyVideoEditor has been disposed.');
   }
@@ -318,6 +318,15 @@ function mountEditor(host, model, options) {
   const refs = queryRefs(host);
   /** @type {Map<number, unknown>} */
   const tileStates = new Map();
+  const viewContextBase = {
+    doc,
+    preview: options.preview ?? {},
+    world: model.world,
+    dispatch(action) {
+      handleViewAction(action);
+    },
+    reportError,
+  };
   /** @type {number | null} */
   let raf = null;
   let lastTick = performance.now();
@@ -563,6 +572,7 @@ function mountEditor(host, model, options) {
   }
 
   function renderTiles() {
+    const snapshot = model.getViewSnapshot();
     for (const [index, tile] of refs.tiles.entries()) {
       const mode = model.state.tileModes[index] ?? 'xy';
       tile.select.value = mode;
@@ -576,175 +586,46 @@ function mountEditor(host, model, options) {
       }
       const current = tileStates.get(index);
       if (current?.mode !== mode) {
-        current?.dispose?.();
+        disposeTileView(current);
         tile.body.replaceChildren();
         tileStates.delete(index);
-        if (mode === 'perspective') tileStates.set(index, createPerspectiveTile(tile.body));
-        else if (mode === 'skykit') tileStates.set(index, createSkykitTile(tile.body, options.preview));
-        else tileStates.set(index, createProjectionTile(tile.body, mode));
+        const view = createJourneyVideoEditorView(mode);
+        tileStates.set(index, view);
+        mountTileView(view, tile.body);
       }
-      tileStates.get(index)?.render?.();
+      tileStates.get(index)?.update?.(snapshot);
     }
   }
 
-  function createProjectionTile(body, mode) {
-    const canvas = doc.createElement('canvas');
-    canvas.className = 'jve-tile-canvas';
-    body.append(canvas);
-    let markers = [];
-    canvas.addEventListener('click', (event) => {
-      const point = canvasPoint(canvas, event.clientX, event.clientY);
-      const marker = hitJourneyEditorMarker(markers, point.x, point.y);
-      if (marker) {
-        model.selectWidget(marker.type, marker.id, { extendRange: event.shiftKey });
-        renderAll();
-      }
-    });
-    canvas.addEventListener('pointerdown', (event) => {
-      const point = canvasPoint(canvas, event.clientX, event.clientY);
-      const marker = hitJourneyEditorMarker(markers, point.x, point.y);
-      if (!marker) return;
-      model.selectWidget(marker.type, marker.id, { extendRange: event.shiftKey });
-      const projection = markers.projection;
-      const move = (moveEvent) => {
-        const canvasPos = canvasPoint(canvas, moveEvent.clientX, moveEvent.clientY);
-        const [axisA, axisB] = projection.axes;
-        const currentPoint = widgetPoint(model.journey, marker.type, marker.id);
-        if (!currentPoint) return;
-        const next = { ...currentPoint };
-        next[axisA] = projection.centerA + (canvasPos.x - projection.width / 2) / projection.scale;
-        next[axisB] = projection.centerB - (canvasPos.y - projection.height / 2) / projection.scale;
-        model.updateSelectedPoint(next);
-        renderAll();
-      };
-      const done = () => {
-        globalThis.removeEventListener('pointermove', move);
-        globalThis.removeEventListener('pointerup', done);
-      };
-      globalThis.addEventListener('pointermove', move);
-      globalThis.addEventListener('pointerup', done, { once: true });
-    });
-    return {
-      mode,
-      render() {
-        const { width, height, context } = syncCanvas(canvas);
-        const data = createJourneyEditorProjectionData(model.journey, { sampleStepSecs: SAMPLE_STEP_SECS });
-        const projection = createJourneyProjectionTransform({
-          mode,
-          bounds: data.bounds,
-          width,
-          height,
-          zoom: model.state.zoom,
-          center: model.evaluated.observerPc,
-        });
-        markers = drawProjection(context, data, projection);
-        markers.projection = projection;
-      },
-      dispose() {
-        canvas.remove();
-      },
-    };
+  function mountTileView(view, body) {
+    try {
+      Promise.resolve(view.mount({ ...viewContextBase, body })).catch(reportError);
+    } catch (error) {
+      reportError(error);
+    }
   }
 
-  function createPerspectiveTile(body) {
-    const canvas = doc.createElement('canvas');
-    canvas.className = 'jve-tile-canvas';
-    body.append(canvas);
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100000);
-    const controls = new OrbitControls(camera, canvas);
-    const root = new THREE.Group();
-    scene.add(root);
-    scene.background = new THREE.Color(0x02050b);
-    return {
-      mode: 'perspective',
-      render() {
-        const { width, height } = syncCanvas(canvas);
-        renderer.setSize(width, height, false);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        root.clear();
-        const bounds = computeJourneyBounds(model.journey, model.samples);
-        const center = vector3(model.evaluated.observerPc);
-        const distance = Math.max(30, bounds.span / Math.max(0.2, model.state.zoom));
-        camera.position.copy(center).add(new THREE.Vector3(distance, distance * 0.6, distance));
-        controls.target.copy(center);
-        controls.update();
-        addPerspectiveContent(root);
-        renderer.render(scene, camera);
-      },
-      dispose() {
-        renderer.dispose();
-        controls.dispose();
-        canvas.remove();
-      },
-    };
+  function disposeTileView(view) {
+    try {
+      Promise.resolve(view?.dispose?.()).catch(reportError);
+    } catch (error) {
+      reportError(error);
+    }
   }
 
-  function createSkykitTile(body, preview = {}) {
-    const shell = doc.createElement('div');
-    shell.className = 'jve-skykit-tile';
-    body.append(shell);
-    const guideGroup = new THREE.Group();
-    guideGroup.name = 'journey-video-editor-guides';
-    let disposed = false;
-    let ready = false;
-    let viewer = null;
-    let loop = null;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.001, 10000);
-    const provider = createStarOctreeProviderService({ url: preview.octreeUrl ?? OCTREE_DEFAULT });
-    const starField = createThreeStarField({ renderScale: preview.renderScale ?? 0.02 });
-    createSkykitViewer({
-      host: shell,
-      renderer,
-      camera,
-      view: { coordinateUnitsPerParsec: preview.coordinateUnitsPerParsec ?? 0.02 },
-      plugins: [
-        createStreamingStarsPlugin({
-          provider,
-          renderer: starField,
-          session: { strategy: createObserverShellStrategy() },
-        }),
-        createObject3dPlugin({ id: 'journey-guides', object3d: guideGroup }),
-      ],
-    }).then((created) => {
-      if (disposed) {
-        void created.dispose();
-        return;
-      }
-      viewer = created;
-      loop = createSkykitAnimationLoop(viewer, { render: true });
-      loop.start();
-      ready = true;
-      applySkykitState();
-    }).catch(reportError);
-    return {
-      mode: 'skykit',
-      render() {
-        if (ready) applySkykitState();
-      },
-      async dispose() {
-        disposed = true;
-        loop?.dispose?.();
-        await viewer?.dispose?.();
-        provider.dispose?.();
-        renderer.dispose?.();
-        shell.remove();
-      },
-    };
-
-    function applySkykitState() {
-      if (!viewer) return;
-      updateGuideMeshes(guideGroup);
-      viewer.requestViewState({
-        observerPc: model.evaluated.observerPc,
-        orientationIcrs: model.evaluated.orientationIcrs,
-        targetPc: model.evaluated.targetPc,
-        limitingMagnitude: preview.limitingMagnitude ?? 6.5,
-      }, 'journey-video-editor');
-      viewer.resize();
+  function handleViewAction(action) {
+    if (action.type === 'selectWidget') {
+      model.selectWidget(String(action.widgetType), String(action.id), {
+        extendRange: action.extendRange === true,
+        keepRange: action.keepRange === true,
+      });
+      renderAll();
+      return;
+    }
+    if (action.type === 'updateWidgetPoint') {
+      if (!action.pointPc || typeof action.pointPc !== 'object') return;
+      model.updateWidgetPoint(String(action.widgetType), String(action.id), action.pointPc);
+      renderAll();
     }
   }
 
@@ -774,114 +655,6 @@ function mountEditor(host, model, options) {
   function reportError(error) {
     options.onError?.(error);
     refs.status.textContent = error instanceof Error ? error.message : String(error);
-  }
-
-  function drawProjection(context, data, projection) {
-    const width = projection.width;
-    const height = projection.height;
-    const markers = [];
-    context.fillStyle = '#02050b';
-    context.fillRect(0, 0, width, height);
-    context.strokeStyle = 'rgba(91, 231, 196, 0.14)';
-    context.lineWidth = 1;
-    for (let index = -16; index <= 16; index += 1) {
-      context.beginPath();
-      context.moveTo(width / 2 + index * 44 * model.state.zoom, 0);
-      context.lineTo(width / 2 + index * 44 * model.state.zoom, height);
-      context.moveTo(0, height / 2 + index * 44 * model.state.zoom);
-      context.lineTo(width, height / 2 + index * 44 * model.state.zoom);
-      context.stroke();
-    }
-    context.strokeStyle = '#f2f6ff';
-    context.lineWidth = 2;
-    context.beginPath();
-    for (const [index, sample] of data.samples.entries()) {
-      const point = projectJourneyEditorPoint(sample.observerPc, projection);
-      if (index === 0) context.moveTo(point.x, point.y);
-      else context.lineTo(point.x, point.y);
-    }
-    context.stroke();
-    for (const guide of model.journey.guides) {
-      const point = projectJourneyEditorPoint(guide.positionPc, projection);
-      context.strokeStyle = guide.color ?? '#8fd5ff';
-      context.lineWidth = isSelected('guide', guide.id) ? 3 : 1.5;
-      context.beginPath();
-      context.arc(point.x, point.y, Math.max(4, Number(guide.radiusPc ?? 1) * projection.scale), 0, Math.PI * 2);
-      context.stroke();
-      context.fillStyle = guide.color ?? '#8fd5ff';
-      context.fillText(guide.label ?? guide.id, point.x + 7, point.y - 7);
-      markers.push({ type: 'guide', id: guide.id, x: point.x, y: point.y, radius: 12 });
-    }
-    for (const waypoint of model.journey.locationWaypoints) {
-      const point = projectJourneyEditorPoint(waypoint.positionPc, projection);
-      context.fillStyle = isSelected('location', waypoint.id) ? '#ffb454' : waypoint.motionGroup?.role === 'helper' ? '#5be7c4' : '#f2f6ff';
-      context.beginPath();
-      context.arc(point.x, point.y, waypoint.motionGroup?.role === 'helper' ? 4 : 6, 0, Math.PI * 2);
-      context.fill();
-      markers.push({ type: 'location', id: waypoint.id, x: point.x, y: point.y, radius: 11 });
-    }
-    for (const waypoint of model.journey.cameraLookWaypoints) {
-      if (waypoint.kind !== 'target') continue;
-      const point = projectJourneyEditorPoint(waypoint.targetPc, projection);
-      context.strokeStyle = isSelected('camera', waypoint.id) ? '#ffb454' : '#5ddcff';
-      context.beginPath();
-      context.arc(point.x, point.y, 8, 0, Math.PI * 2);
-      context.stroke();
-      markers.push({ type: 'camera', id: waypoint.id, x: point.x, y: point.y, radius: 12 });
-    }
-    const current = projectJourneyEditorPoint(model.evaluated.observerPc, projection);
-    context.fillStyle = '#ffffff';
-    context.beginPath();
-    context.arc(current.x, current.y, 5, 0, Math.PI * 2);
-    context.fill();
-    return markers;
-  }
-
-  function addPerspectiveContent(root) {
-    for (const sample of model.samples) {
-      const point = new THREE.Mesh(
-        new THREE.SphereGeometry(0.15, 12, 8),
-        new THREE.MeshBasicMaterial({ color: 0xf2f6ff }),
-      );
-      point.position.copy(vector3(sample.observerPc));
-      root.add(point);
-    }
-    updateGuideMeshes(root, false);
-    for (const waypoint of model.journey.locationWaypoints) {
-      const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.35, 16, 8),
-        new THREE.MeshBasicMaterial({ color: isSelected('location', waypoint.id) ? 0xffb454 : 0x5be7c4 }),
-      );
-      mesh.position.copy(vector3(waypoint.positionPc));
-      root.add(mesh);
-    }
-  }
-
-  function updateGuideMeshes(group, clear = true) {
-    if (clear) {
-      for (const child of [...group.children]) {
-        group.remove(child);
-        disposeObject3d(child);
-      }
-    }
-    for (const guide of model.journey.guides) {
-      const material = new THREE.MeshBasicMaterial({
-        color: colorNumber(guide.color),
-        transparent: true,
-        opacity: clamp(Number(guide.opacity ?? 0.45), 0, 1),
-        wireframe: Number(guide.opacity ?? 0.45) < 0.3,
-      });
-      const geometry = guide.shape === 'cube'
-        ? new THREE.BoxGeometry(Number(guide.sizePc ?? guide.radiusPc ?? 1), Number(guide.sizePc ?? guide.radiusPc ?? 1), Number(guide.sizePc ?? guide.radiusPc ?? 1))
-        : new THREE.SphereGeometry(Number(guide.radiusPc ?? guide.sizePc ?? 1), 32, 16);
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.copy(vector3(guide.positionPc));
-      group.add(mesh);
-    }
-  }
-
-  function isSelected(type, id) {
-    return model.state.selectedWidget?.type === type && model.state.selectedWidget.id === id;
   }
 
   function field(label, input) {
@@ -1066,6 +839,47 @@ function must(root, selector) {
   return value;
 }
 
+function createEditorViewSnapshot(journey, state, evaluated, samples, world) {
+  const snapshotJourney = normalizeTimedJourney(journey);
+  const snapshotSamples = samples.map(cloneFrame);
+  return deepFreeze({
+    journey: snapshotJourney,
+    editorState: normalizeJourneyVideoEditorState(state),
+    evaluated: cloneFrame(evaluated),
+    samples: snapshotSamples,
+    projectionData: {
+      bounds: computeJourneyBounds(snapshotJourney, snapshotSamples),
+    },
+    world,
+  });
+}
+
+function cloneFrame(frame) {
+  return {
+    ...frame,
+    observerPc: clonePoint(frame.observerPc),
+    targetPc: clonePoint(frame.targetPc),
+    velocityPcPerSec: clonePoint(frame.velocityPcPerSec),
+    cameraUpPc: clonePoint(frame.cameraUpPc),
+    orientationIcrs: frame.orientationIcrs ? { ...frame.orientationIcrs } : null,
+  };
+}
+
+function clonePoint(point) {
+  return {
+    x: Number(point?.x ?? 0),
+    y: Number(point?.y ?? 0),
+    z: Number(point?.z ?? 0),
+  };
+}
+
+function deepFreeze(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Object.keys(value)) deepFreeze(value[key], seen);
+  return Object.freeze(value);
+}
+
 function findWidget(journey, type, id) {
   return findMutableWidget(journey, type, id) ? { type, id } : null;
 }
@@ -1077,13 +891,6 @@ function findMutableWidget(journey, type, id) {
   return null;
 }
 
-function widgetPoint(journey, type, id) {
-  const widget = findMutableWidget(journey, type, id);
-  if (!widget) return null;
-  if (type === 'camera') return widget.kind === 'target' ? widget.targetPc : null;
-  return widget.positionPc;
-}
-
 function sortByTime(entries) {
   return [...entries].sort((left, right) => Number(left.timeSecs ?? 0) - Number(right.timeSecs ?? 0) || String(left.id).localeCompare(String(right.id)));
 }
@@ -1093,29 +900,6 @@ function nextId(entries, prefix) {
   let index = entries.length + 1;
   while (ids.has(`${prefix}-${index}`)) index += 1;
   return `${prefix}-${index}`;
-}
-
-function syncCanvas(canvas) {
-  const scale = Math.min(globalThis.devicePixelRatio || 1, 2);
-  const width = Math.max(1, Math.floor((canvas.clientWidth || 1) * scale));
-  const height = Math.max(1, Math.floor((canvas.clientHeight || 1) * scale));
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
-  }
-  return { width, height, scale, context: canvas.getContext('2d') };
-}
-
-function canvasPoint(canvas, clientX, clientY) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: (clientX - rect.left) * (canvas.width / Math.max(1, rect.width)),
-    y: (clientY - rect.top) * (canvas.height / Math.max(1, rect.height)),
-  };
-}
-
-function vector3(point) {
-  return new THREE.Vector3(Number(point?.x ?? 0), Number(point?.y ?? 0), Number(point?.z ?? 0));
 }
 
 function pointText(point) {
@@ -1132,22 +916,6 @@ function snapTime(value) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number.isFinite(Number(value)) ? Number(value) : min));
-}
-
-function colorNumber(value, fallback = 0x8fd5ff) {
-  const text = String(value ?? '').trim();
-  return /^#[0-9a-f]{6}$/iu.test(text) ? Number.parseInt(text.slice(1), 16) : fallback;
-}
-
-function disposeObject3d(object) {
-  object.traverse?.((child) => {
-    child.geometry?.dispose?.();
-    if (Array.isArray(child.material)) {
-      for (const material of child.material) material.dispose?.();
-    } else {
-      child.material?.dispose?.();
-    }
-  });
 }
 
 function downloadText(doc, filename, text) {

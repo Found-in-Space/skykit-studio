@@ -19,7 +19,9 @@ export interface JourneyVideoStorageLike {
 export interface JourneyVideoEditorPreviewOptions {
   skykit?: boolean;
   octreeUrl?: string;
+  /** Visual scale for the Three.js star-field object. Defaults to 1 and does not change world coordinates. */
   renderScale?: number;
+  /** Single conversion from authored parsecs to SkyKit/Three render units. Defaults to 0.02. */
   coordinateUnitsPerParsec?: number;
   limitingMagnitude?: number;
 }
