@@ -346,9 +346,11 @@ function createTransportView() {
 function createTimelineView() {
   let context = null;
   let timeInput = null;
+  let timeProgress = null;
   let playhead = null;
   let locationLane = null;
   let cameraLane = null;
+  let latestSnapshot = null;
   return {
     mode: 'timeline',
     mount(nextContext) {
@@ -363,7 +365,10 @@ function createTimelineView() {
         nextContext.dispatch({ type: 'setTime', timeSecs: Number(timeInput.value) });
       });
       const timeLane = timelineLane(nextContext.doc, 'Time');
-      timeLane.track.append(timeInput);
+      timeLane.track.classList.add('jve-time-track');
+      timeProgress = nextContext.doc.createElement('div');
+      timeProgress.className = 'jve-time-progress';
+      timeLane.track.append(timeProgress, timeInput);
       const location = timelineLane(nextContext.doc, 'Loc');
       const camera = timelineLane(nextContext.doc, 'Cam');
       locationLane = location.track;
@@ -371,13 +376,14 @@ function createTimelineView() {
       nextContext.body.replaceChildren(playhead, timeLane.el, location.el, camera.el);
     },
     update(snapshot) {
-      if (!timeInput || !playhead || !locationLane || !cameraLane) return;
+      if (!timeInput || !timeProgress || !playhead || !locationLane || !cameraLane) return;
+      latestSnapshot = snapshot;
       const duration = Math.max(0.1, Number(snapshot.journey.durationSecs ?? 0));
       timeInput.max = String(duration);
       if (timeInput !== timeInput.ownerDocument.activeElement) {
         timeInput.value = String(snapshot.editorState.timeSecs ?? 0);
       }
-      playhead.style.left = `${(Number(snapshot.editorState.timeSecs ?? 0) / duration) * 100}%`;
+      syncTimelinePlayhead(context, timeInput, timeProgress, playhead, snapshot);
       locationLane.replaceChildren(...(snapshot.journey.locationWaypoints ?? []).map((waypoint, index) => (
         renderTimelineWidget(context, snapshot, {
           type: 'location',
@@ -393,16 +399,36 @@ function createTimelineView() {
         })
       )));
     },
-    resize() {},
+    resize() {
+      if (context && timeInput && timeProgress && playhead && latestSnapshot) {
+        syncTimelinePlayhead(context, timeInput, timeProgress, playhead, latestSnapshot);
+      }
+    },
     dispose() {
       context?.body.replaceChildren();
       context = null;
       timeInput = null;
+      timeProgress = null;
       playhead = null;
       locationLane = null;
       cameraLane = null;
+      latestSnapshot = null;
     },
   };
+}
+
+function syncTimelinePlayhead(context, timeInput, timeProgress, playhead, snapshot) {
+  const rootRect = context.body.getBoundingClientRect();
+  const track = timeProgress.parentElement ?? timeInput;
+  const trackRect = track.getBoundingClientRect();
+  const min = Number(timeInput.min || 0);
+  const max = Number(timeInput.max || snapshot.journey.durationSecs || 0.1);
+  const timeSecs = clamp(Number(snapshot.editorState.timeSecs ?? 0), min, max);
+  const percent = max > min ? (timeSecs - min) / (max - min) : 0;
+  const progressWidth = track.clientWidth * clamp(percent, 0, 1);
+  const left = trackRect.left - rootRect.left + track.clientLeft + progressWidth;
+  timeProgress.style.width = `${progressWidth}px`;
+  playhead.style.left = `${left}px`;
 }
 
 function createTileSlotView(index) {
