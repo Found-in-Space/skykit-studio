@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as THREE from 'three';
 
 import { createJourneyVideoEditor } from '../editor.js';
 import {
@@ -20,6 +21,10 @@ import {
   normalizeJourneyVideoRenderProfile,
 } from '../export.js';
 import { normalizeJourneyVideoCliOptions } from '../export-node.js';
+import {
+  getPlaneAxisIndicatorLayout,
+  projectCameraAxisIndicators,
+} from '../editor/axis-indicator.js';
 import {
   createJourneyEditorProjectionData,
   createJourneyProjectionTransform,
@@ -134,6 +139,54 @@ test('projection views share explicit units per parsec', () => {
   assert.ok(Math.abs(roundTrip.z - guide.positionPc.z) < 1e-9);
 });
 
+test('axis indicators map projection planes into the shared glyph model', () => {
+  assert.deepEqual(summarizePlaneIndicator('xy'), {
+    axes: [
+      { axis: 'x', kind: 'arrow', vector: { x: 1, y: 0 } },
+      { axis: 'y', kind: 'arrow', vector: { x: 0, y: -1 } },
+      { axis: 'z', kind: 'perpendicular', direction: 'out' },
+    ],
+  });
+  assert.deepEqual(summarizePlaneIndicator('xz'), {
+    axes: [
+      { axis: 'x', kind: 'arrow', vector: { x: 1, y: 0 } },
+      { axis: 'z', kind: 'arrow', vector: { x: 0, y: -1 } },
+      { axis: 'y', kind: 'perpendicular', direction: 'in' },
+    ],
+  });
+  assert.deepEqual(summarizePlaneIndicator('yz'), {
+    axes: [
+      { axis: 'y', kind: 'arrow', vector: { x: 1, y: 0 } },
+      { axis: 'z', kind: 'arrow', vector: { x: 0, y: -1 } },
+      { axis: 'x', kind: 'perpendicular', direction: 'out' },
+    ],
+  });
+});
+
+test('camera axis indicators project finite screen vectors from camera orientation', () => {
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.001, 1000);
+  camera.position.set(10, 6, 14);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  const axes = projectCameraAxisIndicators(camera);
+
+  assert.deepEqual(axes.map((axis) => axis.axis), ['x', 'y', 'z']);
+  for (const axis of axes) {
+    assert.equal(Number.isFinite(axis.vector.x), true);
+    assert.equal(Number.isFinite(axis.vector.y), true);
+    assert.equal(Number.isFinite(axis.screenLength), true);
+    assert.equal(Number.isFinite(axis.depth), true);
+    assert.equal(axis.kind === 'arrow' || axis.kind === 'perpendicular', true);
+    if (axis.screenLength > 1e-6) {
+      assert.ok(Math.abs(Math.hypot(axis.vector.x, axis.vector.y) - 1) < 1e-9);
+    }
+  }
+
+  const defaultCameraAxes = projectCameraAxisIndicators(new THREE.PerspectiveCamera());
+  assert.equal(defaultCameraAxes.find((axis) => axis.axis === 'z')?.kind, 'perpendicular');
+  assert.equal(defaultCameraAxes.find((axis) => axis.axis === 'z')?.direction, 'out');
+});
+
 test('headless editor handle updates snapshots, evaluates frames, and disposes cleanly', async () => {
   const changes = [];
   const editor = createJourneyVideoEditor({
@@ -164,6 +217,19 @@ test('headless editor handle updates snapshots, evaluates frames, and disposes c
   assert.equal(editor.getSnapshot().disposed, true);
   assert.throws(() => editor.setTime(1), /disposed/u);
 });
+
+function summarizePlaneIndicator(mode) {
+  const layout = getPlaneAxisIndicatorLayout(mode);
+  return {
+    axes: layout.axes.map((axis) => ({
+      axis: axis.axis,
+      kind: axis.kind,
+      ...(axis.kind === 'arrow'
+        ? { vector: axis.vector }
+        : { direction: axis.direction }),
+    })),
+  };
+}
 
 test('video export helpers normalize layout and render profile defaults', () => {
   const layout = normalizeJourneyVideoLayout('vertical-1080x1920');

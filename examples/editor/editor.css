@@ -367,6 +367,17 @@ textarea {
   position: relative;
 }
 
+.jve-axis-indicator {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: block;
+  width: 92px;
+  height: 92px;
+  pointer-events: none;
+}
+
 .jve-tile-canvas,
 .jve-skykit-tile {
   display: block;
