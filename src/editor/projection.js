@@ -54,30 +54,22 @@ export function computeJourneyBounds(journey, samples = []) {
 }
 
 /**
- * @param {{ mode?: string; bounds: ReturnType<typeof computeJourneyBounds>; width: number; height: number; zoom?: number; center?: { x: number; y: number; z: number } }} options
+ * @param {{ mode?: string; width: number; height: number; unitsPerParsec?: number; centerPc?: { x?: number; y?: number; z?: number } }} options
  */
 export function createJourneyProjectionTransform(options) {
   const mode = options.mode === 'xz' || options.mode === 'yz' ? options.mode : 'xy';
   const axes = DEFAULT_AXES[mode];
   const width = Math.max(1, Number(options.width ?? 1));
   const height = Math.max(1, Number(options.height ?? 1));
-  const pad = 30;
-  const minA = Number(options.bounds[`min${axes[0].toUpperCase()}`]);
-  const maxA = Number(options.bounds[`max${axes[0].toUpperCase()}`]);
-  const minB = Number(options.bounds[`min${axes[1].toUpperCase()}`]);
-  const maxB = Number(options.bounds[`max${axes[1].toUpperCase()}`]);
-  const scale = Math.min(
-    (width - pad * 2) / Math.max(1e-9, maxA - minA),
-    (height - pad * 2) / Math.max(1e-9, maxB - minB),
-  ) * Math.max(0.01, Number(options.zoom ?? 1));
+  const unitsPerParsec = Math.max(0.001, Number(options.unitsPerParsec ?? 1));
   return {
     mode,
     axes,
     width,
     height,
-    scale,
-    centerA: Number(options.center?.[axes[0]] ?? (minA + maxA) / 2),
-    centerB: Number(options.center?.[axes[1]] ?? (minB + maxB) / 2),
+    unitsPerParsec,
+    centerA: Number(options.centerPc?.[axes[0]] ?? 0),
+    centerB: Number(options.centerPc?.[axes[1]] ?? 0),
   };
 }
 
@@ -88,8 +80,22 @@ export function createJourneyProjectionTransform(options) {
 export function projectJourneyEditorPoint(point, transform) {
   const [axisA, axisB] = transform.axes;
   return {
-    x: transform.width / 2 + (Number(point?.[axisA] ?? 0) - transform.centerA) * transform.scale,
-    y: transform.height / 2 - (Number(point?.[axisB] ?? 0) - transform.centerB) * transform.scale,
+    x: transform.width / 2 + (Number(point?.[axisA] ?? 0) - transform.centerA) * transform.unitsPerParsec,
+    y: transform.height / 2 - (Number(point?.[axisB] ?? 0) - transform.centerB) * transform.unitsPerParsec,
+  };
+}
+
+/**
+ * @param {{ x?: number; y?: number }} point
+ * @param {ReturnType<typeof createJourneyProjectionTransform>} transform
+ * @param {{ x?: number; y?: number; z?: number }} [basePoint]
+ */
+export function unprojectJourneyEditorPoint(point, transform, basePoint = {}) {
+  const [axisA, axisB] = transform.axes;
+  return {
+    ...basePoint,
+    [axisA]: transform.centerA + (Number(point?.x ?? 0) - transform.width / 2) / transform.unitsPerParsec,
+    [axisB]: transform.centerB - (Number(point?.y ?? 0) - transform.height / 2) / transform.unitsPerParsec,
   };
 }
 

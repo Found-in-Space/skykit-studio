@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { createJourneyVideoEditor } from '../editor.js';
 import {
+  DEFAULT_EDITOR_UNITS_PER_PARSEC,
   JOURNEY_VIDEO_PACKAGE_STATUS,
   createJourneyVideoEditorDocument,
   exportJourneyVideoEditorDocument,
@@ -24,6 +25,7 @@ import {
   createJourneyProjectionTransform,
   hitJourneyEditorMarker,
   projectJourneyEditorPoint,
+  unprojectJourneyEditorPoint,
 } from '../editor/projection.js';
 
 const SAMPLE_JOURNEY = {
@@ -54,10 +56,10 @@ test('journey-video package exposes alpha editor status', () => {
   assert.equal(JOURNEY_VIDEO_PACKAGE_STATUS, 'alpha-editor');
 });
 
-test('editor state normalization preserves safe tile, zoom, selection, and draft defaults', () => {
+test('editor state normalization preserves safe tile, scale, selection, and draft defaults', () => {
   const state = normalizeJourneyVideoEditorState({
     tileModes: ['yz', 'skykit', 'bad-mode'],
-    zoom: 200,
+    unitsPerParsec: 200,
     selectedWidget: { type: 'guide', id: 'guide-a' },
     selectedLocationRange: { anchorId: 'loc-a', focusId: 'loc-b' },
     timeSecs: 3.25,
@@ -65,17 +67,18 @@ test('editor state normalization preserves safe tile, zoom, selection, and draft
   });
 
   assert.deepEqual(state.tileModes, ['yz', 'skykit', 'perspective', 'skykit']);
-  assert.equal(state.zoom, 50);
+  assert.equal(state.unitsPerParsec, 80);
   assert.deepEqual(state.selectedWidget, { type: 'guide', id: 'guide-a' });
   assert.deepEqual(state.selectedLocationRange, { anchorId: 'loc-a', focusId: 'loc-b' });
   assert.equal(state.timeSecs, 3.25);
   assert.equal(state.playing, true);
+  assert.equal(normalizeJourneyVideoEditorState({ zoom: 25 }).unitsPerParsec, DEFAULT_EDITOR_UNITS_PER_PARSEC);
 });
 
 test('editor documents import and export fis journey data without website fields', () => {
   const document = createJourneyVideoEditorDocument({
     journey: SAMPLE_JOURNEY,
-    editorState: { tileModes: ['xy', 'xz', 'yz', 'perspective'], zoom: 2 },
+    editorState: { tileModes: ['xy', 'xz', 'yz', 'perspective'], unitsPerParsec: 2 },
     metadata: { source: 'test' },
   });
   const exported = exportJourneyVideoEditorDocument(document);
@@ -84,7 +87,7 @@ test('editor documents import and export fis journey data without website fields
   assert.equal(imported.format, 'fis-journey-video-editor-v1');
   assert.equal(imported.journey.format, 'fis-journey-v1');
   assert.equal(imported.journey.id, 'editor-test');
-  assert.equal(imported.editorState.zoom, 2);
+  assert.equal(imported.editorState.unitsPerParsec, 2);
   assert.equal(imported.metadata.source, 'test');
 
   const rawJourney = importJourneyVideoEditorDocument(JSON.stringify(SAMPLE_JOURNEY));
@@ -95,10 +98,9 @@ test('projection helpers map journey widgets into stable tile coordinates and hi
   const data = createJourneyEditorProjectionData(SAMPLE_JOURNEY, { sampleStepSecs: 5 });
   const transform = createJourneyProjectionTransform({
     mode: 'xz',
-    bounds: data.bounds,
     width: 400,
     height: 300,
-    zoom: 1,
+    unitsPerParsec: 3,
   });
   const projected = projectJourneyEditorPoint({ x: 5, y: 0, z: -2 }, transform);
   const hit = hitJourneyEditorMarker([
@@ -111,11 +113,32 @@ test('projection helpers map journey widgets into stable tile coordinates and hi
   assert.equal(hit?.id, 'guide-a');
 });
 
+test('projection views share explicit units per parsec', () => {
+  const sharedOptions = {
+    width: 400,
+    height: 300,
+    unitsPerParsec: 5.55,
+  };
+  const xy = createJourneyProjectionTransform({ ...sharedOptions, mode: 'xy' });
+  const xz = createJourneyProjectionTransform({ ...sharedOptions, mode: 'xz' });
+  const yz = createJourneyProjectionTransform({ ...sharedOptions, mode: 'yz' });
+  const guide = SAMPLE_JOURNEY.guides[0];
+  const projected = projectJourneyEditorPoint(guide.positionPc, xz);
+  const roundTrip = unprojectJourneyEditorPoint(projected, xz, guide.positionPc);
+
+  assert.equal(xy.unitsPerParsec, xz.unitsPerParsec);
+  assert.equal(xz.unitsPerParsec, yz.unitsPerParsec);
+  assert.equal(guide.radiusPc * xy.unitsPerParsec, guide.radiusPc * xz.unitsPerParsec);
+  assert.ok(Math.abs(roundTrip.x - guide.positionPc.x) < 1e-9);
+  assert.ok(Math.abs(roundTrip.y - guide.positionPc.y) < 1e-9);
+  assert.ok(Math.abs(roundTrip.z - guide.positionPc.z) < 1e-9);
+});
+
 test('headless editor handle updates snapshots, evaluates frames, and disposes cleanly', async () => {
   const changes = [];
   const editor = createJourneyVideoEditor({
     journey: SAMPLE_JOURNEY,
-    editorState: { tileModes: ['xy', 'xz', 'yz', 'perspective'], zoom: 1 },
+    editorState: { tileModes: ['xy', 'xz', 'yz', 'perspective'], unitsPerParsec: 3 },
     onChange(document) {
       changes.push(document);
     },
@@ -125,7 +148,7 @@ test('headless editor handle updates snapshots, evaluates frames, and disposes c
   assert.equal(editor.getSnapshot().timeSecs, 4.95);
   assert.ok(editor.evaluateAt(5).observerPc.x > 4);
   editor.setTileMode(1, 'skykit');
-  editor.setZoom(3);
+  editor.setUnitsPerParsec(6);
   editor.selectWidget('guide', 'guide-a');
 
   const snapshot = editor.getSnapshot();

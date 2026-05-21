@@ -1,6 +1,7 @@
 import type { TimedJourney } from '@found-in-space/journey';
 
 export declare const JOURNEY_VIDEO_PACKAGE_STATUS: 'alpha-editor';
+export declare const DEFAULT_EDITOR_UNITS_PER_PARSEC: 3;
 export declare const JOURNEY_VIDEO_EDITOR_TILE_MODES: readonly ['xy', 'xz', 'yz', 'perspective', 'skykit'];
 
 export type JourneyVideoEditorTileMode = 'xy' | 'xz' | 'yz' | 'perspective' | 'skykit';
@@ -18,7 +19,7 @@ export interface JourneyVideoEditorLocationRangeRef {
 
 export interface JourneyVideoEditorState {
   tileModes: JourneyVideoEditorTileMode[];
-  zoom: number;
+  unitsPerParsec: number;
   selectedWidget: JourneyVideoEditorWidgetRef | null;
   selectedLocationRange: JourneyVideoEditorLocationRangeRef | null;
   selectedLocationGroupId: string | null;

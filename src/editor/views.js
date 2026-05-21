@@ -15,12 +15,16 @@ import {
 } from '@found-in-space/star-octree-provider';
 import { createObserverShellStrategy } from '@found-in-space/star-trees';
 import { createThreeStarField } from '@found-in-space/three-star-field';
-import { JOURNEY_VIDEO_EDITOR_TILE_MODES } from '../index.js';
+import {
+  DEFAULT_EDITOR_UNITS_PER_PARSEC,
+  JOURNEY_VIDEO_EDITOR_TILE_MODES,
+} from '../index.js';
 
 import {
   createJourneyProjectionTransform,
   hitJourneyEditorMarker,
   projectJourneyEditorPoint,
+  unprojectJourneyEditorPoint,
 } from './projection.js';
 import {
   createJourneyVideoGuideGroup,
@@ -69,7 +73,7 @@ export function createJourneyVideoEditorView(mode, options = {}) {
   if (mode === 'guide-flow') return createGuideFlowView();
   if (mode === 'waypoint-editor') return createWaypointEditorView();
   if (mode === 'status') return createStatusView();
-  if (mode === 'zoom') return createZoomView();
+  if (mode === 'scale') return createScaleView();
   if (mode === 'transport') return createTransportView();
   if (mode === 'timeline') return createTimelineView();
   if (mode === 'tile') return createTileSlotView(Number(options.index ?? 0));
@@ -278,24 +282,24 @@ function createStatusView() {
   };
 }
 
-function createZoomView() {
+function createScaleView() {
   let context = null;
   let input = null;
   let value = null;
   return {
-    mode: 'zoom',
+    mode: 'scale',
     mount(nextContext) {
       context = nextContext;
       const label = nextContext.doc.createElement('label');
       label.className = 'jve-inline-control';
-      label.append(span(nextContext.doc, 'Zoom'));
+      label.append(span(nextContext.doc, 'Scale'));
       input = nextContext.doc.createElement('input');
       input.type = 'range';
-      input.min = '0.35';
-      input.max = '50';
+      input.min = '0.25';
+      input.max = '80';
       input.step = '0.05';
       input.addEventListener('input', () => {
-        nextContext.dispatch({ type: 'setZoom', zoom: Number(input.value) });
+        nextContext.dispatch({ type: 'setUnitsPerParsec', unitsPerParsec: Number(input.value) });
       });
       value = nextContext.doc.createElement('span');
       label.append(input, value);
@@ -303,8 +307,9 @@ function createZoomView() {
     },
     update(snapshot) {
       if (!input || !value) return;
-      if (input !== input.ownerDocument.activeElement) input.value = String(snapshot.editorState.zoom ?? 1);
-      value.textContent = `${Math.round(Number(snapshot.editorState.zoom ?? 1) * 100)}%`;
+      const unitsPerParsec = Number(snapshot.editorState.unitsPerParsec ?? DEFAULT_EDITOR_UNITS_PER_PARSEC);
+      if (input !== input.ownerDocument.activeElement) input.value = String(unitsPerParsec);
+      value.textContent = `${formatNumber(unitsPerParsec)} u/pc`;
     },
     resize() {},
     dispose() {
@@ -986,11 +991,10 @@ function createProjectionView(mode) {
     if (!drawing) return;
     projection = createJourneyProjectionTransform({
       mode,
-      bounds: snapshot.projectionData.bounds,
       width,
       height,
-      zoom: Number(snapshot.editorState.zoom ?? 1),
-      center: snapshot.evaluated.observerPc,
+      unitsPerParsec: Number(snapshot.editorState.unitsPerParsec ?? DEFAULT_EDITOR_UNITS_PER_PARSEC),
+      centerPc: snapshot.evaluated.observerPc,
     });
     markers = drawProjection(drawing, snapshot, projection);
   }
@@ -1028,10 +1032,7 @@ function createProjectionView(mode) {
       const currentPoint = widgetPoint(snapshot.journey, marker.type, marker.id);
       if (!currentPoint) return;
       const canvasPos = canvasPoint(canvas, moveEvent.clientX, moveEvent.clientY);
-      const [axisA, axisB] = dragProjection.axes;
-      const next = { ...currentPoint };
-      next[axisA] = dragProjection.centerA + (canvasPos.x - dragProjection.width / 2) / dragProjection.scale;
-      next[axisB] = dragProjection.centerB - (canvasPos.y - dragProjection.height / 2) / dragProjection.scale;
+      const next = unprojectJourneyEditorPoint(canvasPos, dragProjection, currentPoint);
       context.dispatch({
         type: 'updateWidgetPoint',
         widgetType: marker.type,
@@ -1097,9 +1098,11 @@ function createPerspectiveView() {
     const bounds = snapshot.projectionData.bounds;
     const center = vector3(pointPcToRenderUnits(snapshot.evaluated.observerPc, snapshot.world));
     const minDistance = Math.max(0.1, scalarPcToRenderUnits(30, snapshot.world));
+    const perspectiveScale = Number(snapshot.editorState.unitsPerParsec ?? DEFAULT_EDITOR_UNITS_PER_PARSEC)
+      / DEFAULT_EDITOR_UNITS_PER_PARSEC;
     const distance = Math.max(
       minDistance,
-      scalarPcToRenderUnits(bounds.span, snapshot.world) / Math.max(0.2, Number(snapshot.editorState.zoom ?? 1)),
+      scalarPcToRenderUnits(bounds.span, snapshot.world) / Math.max(0.2, perspectiveScale),
     );
     camera.position.copy(center).add(new THREE.Vector3(distance, distance * 0.6, distance));
     controls.target.copy(center);
@@ -1221,12 +1224,24 @@ function drawProjection(context, snapshot, projection) {
   context.fillRect(0, 0, width, height);
   context.strokeStyle = 'rgba(91, 231, 196, 0.14)';
   context.lineWidth = 1;
-  for (let index = -16; index <= 16; index += 1) {
+  const unitsPerParsec = Number(projection.unitsPerParsec ?? 1);
+  const gridStepPc = chooseProjectionGridStepPc(unitsPerParsec);
+  const minA = Number(projection.centerA ?? 0) - width / 2 / unitsPerParsec;
+  const maxA = Number(projection.centerA ?? 0) + width / 2 / unitsPerParsec;
+  const minB = Number(projection.centerB ?? 0) - height / 2 / unitsPerParsec;
+  const maxB = Number(projection.centerB ?? 0) + height / 2 / unitsPerParsec;
+  for (let value = Math.floor(minA / gridStepPc) * gridStepPc; value <= maxA; value += gridStepPc) {
     context.beginPath();
-    context.moveTo(width / 2 + index * 44 * Number(snapshot.editorState.zoom ?? 1), 0);
-    context.lineTo(width / 2 + index * 44 * Number(snapshot.editorState.zoom ?? 1), height);
-    context.moveTo(0, height / 2 + index * 44 * Number(snapshot.editorState.zoom ?? 1));
-    context.lineTo(width, height / 2 + index * 44 * Number(snapshot.editorState.zoom ?? 1));
+    const x = width / 2 + (value - Number(projection.centerA ?? 0)) * unitsPerParsec;
+    context.moveTo(x, 0);
+    context.lineTo(x, height);
+    context.stroke();
+  }
+  for (let value = Math.floor(minB / gridStepPc) * gridStepPc; value <= maxB; value += gridStepPc) {
+    context.beginPath();
+    const y = height / 2 - (value - Number(projection.centerB ?? 0)) * unitsPerParsec;
+    context.moveTo(0, y);
+    context.lineTo(width, y);
     context.stroke();
   }
   context.strokeStyle = '#f2f6ff';
@@ -1243,7 +1258,7 @@ function drawProjection(context, snapshot, projection) {
     context.strokeStyle = guide.color ?? '#8fd5ff';
     context.lineWidth = isSelected(snapshot, 'guide', guide.id) ? 3 : 1.5;
     context.beginPath();
-    context.arc(point.x, point.y, Math.max(4, Number(guide.radiusPc ?? 1) * Number(projection.scale ?? 1)), 0, Math.PI * 2);
+    context.arc(point.x, point.y, Math.max(4, Number(guide.radiusPc ?? 1) * unitsPerParsec), 0, Math.PI * 2);
     context.stroke();
     context.fillStyle = guide.color ?? '#8fd5ff';
     context.fillText(guide.label ?? guide.id, point.x + 7, point.y - 7);
@@ -1274,6 +1289,17 @@ function drawProjection(context, snapshot, projection) {
   return markers;
 }
 
+function chooseProjectionGridStepPc(unitsPerParsec) {
+  const targetUnits = 80;
+  const rawStep = targetUnits / Math.max(0.001, Number(unitsPerParsec) || 1);
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(1e-9, rawStep)));
+  for (const multiple of [1, 2, 5, 10]) {
+    const step = multiple * magnitude;
+    if (step * unitsPerParsec >= targetUnits) return step;
+  }
+  return 10 * magnitude;
+}
+
 /** @param {THREE.Group} root @param {JourneyVideoEditorViewSnapshot} snapshot */
 function addPerspectiveContent(root, snapshot) {
   for (const sample of snapshot.samples) {
@@ -1296,21 +1322,25 @@ function addPerspectiveContent(root, snapshot) {
 }
 
 function syncCanvas(canvas) {
-  const scale = Math.min(globalThis.devicePixelRatio || 1, 2);
-  const width = Math.max(1, Math.floor((canvas.clientWidth || 1) * scale));
-  const height = Math.max(1, Math.floor((canvas.clientHeight || 1) * scale));
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
+  const pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2);
+  const width = Math.max(1, canvas.clientWidth || 1);
+  const height = Math.max(1, canvas.clientHeight || 1);
+  const backingWidth = Math.max(1, Math.floor(width * pixelRatio));
+  const backingHeight = Math.max(1, Math.floor(height * pixelRatio));
+  if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
+    canvas.width = backingWidth;
+    canvas.height = backingHeight;
   }
-  return { width, height, scale, context: canvas.getContext('2d') };
+  const context = canvas.getContext('2d');
+  context?.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  return { width, height, pixelRatio, context };
 }
 
 function canvasPoint(canvas, clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: (clientX - rect.left) * (canvas.width / Math.max(1, rect.width)),
-    y: (clientY - rect.top) * (canvas.height / Math.max(1, rect.height)),
+    x: clientX - rect.left,
+    y: clientY - rect.top,
   };
 }
 

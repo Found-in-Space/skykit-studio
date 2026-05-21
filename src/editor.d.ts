@@ -60,7 +60,7 @@ export interface JourneyVideoEditor {
   play(): void;
   pause(): void;
   setTileMode(index: number, mode: JourneyVideoEditorTileMode): void;
-  setZoom(zoom: number): void;
+  setUnitsPerParsec(unitsPerParsec: number): void;
   selectWidget(type: JourneyVideoEditorWidgetRef['type'], id: string): void;
   getSnapshot(): JourneyVideoEditorSnapshot;
   dispose(): Promise<void>;

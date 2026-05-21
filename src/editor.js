@@ -59,8 +59,8 @@ export function createJourneyVideoEditor(options = {}) {
       model.setTileMode(index, mode);
       mount?.renderAll();
     },
-    setZoom(zoom) {
-      model.setZoom(zoom);
+    setUnitsPerParsec(unitsPerParsec) {
+      model.setUnitsPerParsec(unitsPerParsec);
       mount?.renderAll();
     },
     selectWidget(type, id) {
@@ -176,9 +176,9 @@ function createEditorModel(options) {
       });
       rebuild();
     },
-    setZoom(zoom) {
+    setUnitsPerParsec(unitsPerParsec) {
       assertActive();
-      state.zoom = clamp(Number(zoom), 0.35, 50);
+      state.unitsPerParsec = clamp(Number(unitsPerParsec), 0.25, 80);
       persist();
     },
     selectWidget(type, id, options = {}) {
@@ -485,8 +485,8 @@ function mountEditor(host, model, options) {
       model.setDuration(Number(action.durationSecs));
       return true;
     }
-    if (action.type === 'setZoom') {
-      model.setZoom(Number(action.zoom));
+    if (action.type === 'setUnitsPerParsec') {
+      model.setUnitsPerParsec(Number(action.unitsPerParsec));
       return true;
     }
     if (action.type === 'setTime') {
@@ -605,7 +605,7 @@ function editorMarkup() {
         <section class="jve-status" data-view-slot="status"></section>
       </aside>
       <main class="jve-main">
-        <div class="jve-view-toolbar" data-view-slot="zoom"></div>
+        <div class="jve-view-toolbar" data-view-slot="scale"></div>
         <section class="jve-tile-grid">
           ${[0, 1, 2, 3].map((index) => `
             <div class="jve-tile" data-view-slot="tile" data-view-index="${index}"></div>

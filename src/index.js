@@ -4,10 +4,11 @@ import {
 } from '@found-in-space/journey';
 
 export const JOURNEY_VIDEO_PACKAGE_STATUS = 'alpha-editor';
+export const DEFAULT_EDITOR_UNITS_PER_PARSEC = 3;
 
 export const DEFAULT_JOURNEY_VIDEO_EDITOR_STATE = Object.freeze({
   tileModes: Object.freeze(['xy', 'xz', 'perspective', 'skykit']),
-  zoom: 1,
+  unitsPerParsec: DEFAULT_EDITOR_UNITS_PER_PARSEC,
   selectedWidget: null,
   selectedLocationRange: null,
   selectedLocationGroupId: null,
@@ -36,7 +37,11 @@ export function normalizeJourneyVideoEditorState(input = {}) {
   while (tileModes.length < 4) tileModes.push(DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.tileModes[tileModes.length] ?? 'xy');
   return {
     tileModes: tileModes.slice(0, 4),
-    zoom: clamp(Number(source.zoom ?? DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.zoom), 0.35, 50),
+    unitsPerParsec: clamp(
+      Number(source.unitsPerParsec ?? DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.unitsPerParsec),
+      0.25,
+      80,
+    ),
     selectedWidget: normalizeWidgetRef(source.selectedWidget),
     selectedLocationRange: normalizeLocationRange(source.selectedLocationRange),
     selectedLocationGroupId: typeof source.selectedLocationGroupId === 'string' ? source.selectedLocationGroupId : null,
