@@ -25,6 +25,8 @@ export function createPerspectiveView() {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 0.001, 100000);
   const root = new THREE.Group();
+  const viewDirection = new THREE.Vector3(1, 0.6, 1).normalize();
+  let applyingCamera = false;
   scene.add(root);
   scene.background = new THREE.Color(0x02050b);
 
@@ -38,6 +40,9 @@ export function createPerspectiveView() {
       context.body.append(axisIndicator.canvas);
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
       controls = new OrbitControls(camera, canvas);
+      controls.enablePan = false;
+      controls.enableZoom = false;
+      controls.addEventListener('change', onControlsChange);
     },
     update(nextSnapshot) {
       snapshot = nextSnapshot;
@@ -49,6 +54,7 @@ export function createPerspectiveView() {
     dispose() {
       disposeObjectChildren(root);
       renderer?.dispose();
+      controls?.removeEventListener?.('change', onControlsChange);
       controls?.dispose();
       axisIndicator?.dispose();
       canvas?.remove();
@@ -76,10 +82,24 @@ export function createPerspectiveView() {
       minDistance,
       scalarPcToRenderUnits(bounds.span, snapshot.world) / Math.max(0.2, perspectiveScale),
     );
-    camera.position.copy(center).add(new THREE.Vector3(distance, distance * 0.6, distance));
+    applyingCamera = true;
+    camera.position.copy(center).add(viewDirection.clone().multiplyScalar(distance));
     controls.target.copy(center);
     controls.update();
+    applyingCamera = false;
     addPerspectiveContent(root, snapshot);
+    renderScene();
+  }
+
+  function onControlsChange() {
+    if (!camera || !controls || applyingCamera) return;
+    const offset = camera.position.clone().sub(controls.target);
+    if (offset.lengthSq() > 0) viewDirection.copy(offset.normalize());
+    renderScene();
+  }
+
+  function renderScene() {
+    if (!renderer) return;
     renderer.render(scene, camera);
     axisIndicator?.renderCamera(camera);
   }
