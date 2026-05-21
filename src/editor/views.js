@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { Camera, MapPin, Plus } from 'lucide';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -65,7 +66,6 @@ export function createJourneyVideoEditorView(mode, options = {}) {
   if (mode === 'state-summary') return createStateSummaryView();
   if (mode === 'duration') return createDurationView();
   if (mode === 'storage') return createStorageView();
-  if (mode === 'create-actions') return createCreateActionsView();
   if (mode === 'guide-flow') return createGuideFlowView();
   if (mode === 'waypoint-editor') return createWaypointEditorView();
   if (mode === 'status') return createStatusView();
@@ -184,31 +184,6 @@ function createStorageView() {
   };
 }
 
-function createCreateActionsView() {
-  let context = null;
-  return {
-    mode: 'create-actions',
-    mount(nextContext) {
-      context = nextContext;
-      const heading = panelHeading(nextContext.doc, 'Create');
-      const row = nextContext.doc.createElement('div');
-      row.className = 'jve-button-row';
-      row.append(
-        button(nextContext.doc, 'Add Location', () => nextContext.dispatch({ type: 'addWidget', widgetType: 'location' })),
-        button(nextContext.doc, 'Add Camera', () => nextContext.dispatch({ type: 'addWidget', widgetType: 'camera' })),
-        button(nextContext.doc, 'Add Guide', () => nextContext.dispatch({ type: 'addWidget', widgetType: 'guide' })),
-      );
-      nextContext.body.replaceChildren(heading, row);
-    },
-    update() {},
-    resize() {},
-    dispose() {
-      context?.body.replaceChildren();
-      context = null;
-    },
-  };
-}
-
 function createGuideFlowView() {
   let context = null;
   return {
@@ -219,7 +194,9 @@ function createGuideFlowView() {
     update(snapshot) {
       if (!context) return;
       const doc = context.doc;
-      const heading = panelHeading(doc, 'Guides');
+      const heading = panelTitleBar(doc, 'Guides', [
+        iconButton(doc, Plus, 'Add guide', () => context.dispatch({ type: 'addWidget', widgetType: 'guide' })),
+      ]);
       const list = doc.createElement('div');
       list.className = 'jve-widget-flow jve-guide-flow';
       for (const guide of snapshot.journey.guides ?? []) {
@@ -248,7 +225,16 @@ function createWaypointEditorView() {
     update(snapshot) {
       if (!context) return;
       const doc = context.doc;
-      const heading = panelHeading(doc, 'Waypoints');
+      const heading = panelTitleBar(doc, 'Waypoints', [
+        iconTextButton(doc, MapPin, 'Add', () => context.dispatch({ type: 'addWidget', widgetType: 'location' }), {
+          ariaLabel: 'Add location',
+          title: 'Add location',
+        }),
+        iconTextButton(doc, Camera, 'Add', () => context.dispatch({ type: 'addWidget', widgetType: 'camera' }), {
+          ariaLabel: 'Add camera',
+          title: 'Add camera',
+        }),
+      ]);
       const selectedRange = selectedLocationRangeInfo(snapshot);
       if (selectedRange) {
         context.body.replaceChildren(heading, renderRangeEditor(context, snapshot, selectedRange));
@@ -539,6 +525,7 @@ function renderWaypointFlowWidget(context, snapshot, entry) {
   card.append(widgetSummary(context, {
     type: entry.type,
     id: entry.waypoint.id,
+    icon: iconForWidgetType(entry.type),
     label: entry.label,
     meta: `${formatNumber(entry.waypoint.timeSecs)}s`,
     selected,
@@ -672,12 +659,14 @@ function widgetSummary(context, options) {
     });
   });
   summary.className = 'jve-widget-summary';
+  if (options.icon) summary.classList.add('has-icon');
   const label = doc.createElement('span');
   label.className = 'jve-widget-label';
   label.textContent = String(options.label ?? options.id);
   const meta = doc.createElement('span');
   meta.className = 'jve-widget-meta';
   meta.textContent = String(options.meta ?? '');
+  if (options.icon) summary.append(iconElement(doc, options.icon, 'jve-widget-icon'));
   summary.append(label, meta);
   return summary;
 }
@@ -802,6 +791,49 @@ function button(doc, label, onClick, className = '') {
   return buttonEl;
 }
 
+function iconButton(doc, icon, label, onClick) {
+  const buttonEl = button(doc, '', onClick, 'jve-icon-button');
+  buttonEl.title = label;
+  buttonEl.setAttribute('aria-label', label);
+  buttonEl.replaceChildren(iconElement(doc, icon));
+  return buttonEl;
+}
+
+function iconTextButton(doc, icon, label, onClick, options = {}) {
+  const buttonEl = button(doc, '', onClick, 'jve-icon-text-button');
+  if (options.ariaLabel) buttonEl.setAttribute('aria-label', options.ariaLabel);
+  if (options.title) buttonEl.title = options.title;
+  buttonEl.append(span(doc, label), iconElement(doc, icon));
+  return buttonEl;
+}
+
+function iconElement(doc, icon, className = 'jve-icon') {
+  const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', className);
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  for (const [tag, attrs] of icon ?? []) {
+    const child = doc.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attrs ?? {})) {
+      child.setAttribute(key, String(value));
+    }
+    svg.append(child);
+  }
+  return svg;
+}
+
+function iconForWidgetType(type) {
+  if (type === 'location') return MapPin;
+  if (type === 'camera') return Camera;
+  return null;
+}
+
 function destructiveRow(doc, child) {
   const row = doc.createElement('div');
   row.className = 'jve-button-row jve-destructive-row';
@@ -813,6 +845,19 @@ function panelHeading(doc, text) {
   const heading = doc.createElement('h2');
   heading.textContent = text;
   return heading;
+}
+
+function panelTitleBar(doc, text, actions = []) {
+  const header = doc.createElement('div');
+  header.className = 'jve-view-heading';
+  header.append(panelHeading(doc, text));
+  if (actions.length > 0) {
+    const row = doc.createElement('div');
+    row.className = 'jve-view-heading-actions';
+    row.append(...actions);
+    header.append(row);
+  }
+  return header;
 }
 
 function emptyText(doc, text) {

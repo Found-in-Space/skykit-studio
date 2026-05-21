@@ -48,6 +48,10 @@ button:hover {
   border-color: var(--accent);
 }
 
+button svg {
+  pointer-events: none;
+}
+
 button.is-danger {
   border-color: rgba(255, 105, 105, 0.5);
   color: #ffb8b8;
@@ -112,6 +116,55 @@ textarea {
   display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+.jve-view-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jve-view-heading h2 {
+  margin: 0;
+}
+
+.jve-view-heading-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.jve-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.jve-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  min-width: 32px;
+  min-height: 30px;
+  padding: 0;
+}
+
+.jve-icon-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding-inline: 7px;
+  white-space: nowrap;
+}
+
+.jve-icon-text-button .jve-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .jve-field,
@@ -198,12 +251,24 @@ textarea {
 .jve-widget-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+  align-items: center;
   gap: 8px;
   width: 100%;
   min-width: 0;
   min-height: 32px;
   padding: 5px 8px;
   text-align: left;
+}
+
+.jve-widget-summary.has-icon {
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, max-content);
+}
+
+.jve-widget-icon {
+  justify-self: center;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
 }
 
 .jve-widget-label,

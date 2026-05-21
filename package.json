@@ -57,6 +57,7 @@
     "@found-in-space/star-octree-provider": "file:../skykit/packages/star-octree-provider",
     "@found-in-space/star-trees": "file:../skykit/packages/star-trees",
     "@found-in-space/three-star-field": "file:../skykit/packages/three-star-field",
+    "lucide": "^1.16.0",
     "three": "^0.170.0"
   },
   "devDependencies": {

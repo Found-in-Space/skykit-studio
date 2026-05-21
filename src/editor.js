@@ -600,7 +600,6 @@ function editorMarkup() {
         <section class="jve-view jve-state-summary" data-view-slot="state-summary"></section>
         <section class="jve-view jve-duration-view" data-view-slot="duration"></section>
         <section class="jve-view jve-storage-view" data-view-slot="storage"></section>
-        <section class="jve-view jve-create-actions" data-view-slot="create-actions"></section>
         <section class="jve-view jve-guide-flow-view" data-view-slot="guide-flow"></section>
         <section class="jve-view jve-waypoint-editor" data-view-slot="waypoint-editor"></section>
         <section class="jve-status" data-view-slot="status"></section>
