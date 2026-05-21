@@ -109,7 +109,7 @@ export function hitJourneyEditorMarker(markers, x, y) {
   let bestDistance = Infinity;
   for (const marker of markers) {
     const distance = Math.hypot(marker.x - x, marker.y - y);
-    if (distance <= (marker.radius ?? 10) && distance < bestDistance) {
+    if (distance <= (marker.radius ?? 10) && distance <= bestDistance) {
       best = marker;
       bestDistance = distance;
     }

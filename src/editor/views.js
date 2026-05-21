@@ -42,6 +42,7 @@ import { createJourneyVideoWorld } from '../world.js';
  *   editorState: Record<string, unknown>;
  *   evaluated: Record<string, unknown>;
  *   samples: Array<Record<string, unknown>>;
+ *   cameraMarkers: Array<Record<string, unknown>>;
  *   projectionData: Record<string, unknown>;
  *   world: ReturnType<typeof createJourneyVideoWorld>;
  *   ui?: Record<string, unknown>;

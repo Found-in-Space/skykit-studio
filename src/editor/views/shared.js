@@ -20,6 +20,18 @@ export function vectorEditor(doc, labelText, point, onChange) {
   return grid;
 }
 
+export function quaternionEditor(doc, labelText, quaternion, onChange) {
+  const grid = doc.createElement('div');
+  grid.className = 'jve-quaternion-grid';
+  grid.append(span(doc, labelText));
+  for (const axis of ['x', 'y', 'z', 'w']) {
+    grid.append(numberInput(doc, quaternion?.[axis] ?? (axis === 'w' ? 1 : 0), (value) => {
+      onChange({ ...quaternion, [axis]: value });
+    }, { step: 0.001 }));
+  }
+  return grid;
+}
+
 export function numberInput(doc, value, onChange, options = {}) {
   const input = doc.createElement('input');
   input.type = 'number';
@@ -28,6 +40,20 @@ export function numberInput(doc, value, onChange, options = {}) {
   input.value = formatNumber(value);
   input.addEventListener('change', () => onChange(Number(input.value)));
   return input;
+}
+
+export function selectInput(doc, value, options, onChange) {
+  const select = doc.createElement('select');
+  for (const option of options) {
+    const normalized = typeof option === 'string' ? { value: option, label: option } : option;
+    const optionEl = doc.createElement('option');
+    optionEl.value = String(normalized.value);
+    optionEl.textContent = String(normalized.label ?? normalized.value);
+    select.append(optionEl);
+  }
+  select.value = String(value ?? '');
+  select.addEventListener('change', () => onChange(select.value));
+  return select;
 }
 
 export function textInput(doc, value, onChange) {

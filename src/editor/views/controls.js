@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { DEFAULT_EDITOR_UNITS_PER_PARSEC } from '../../index.js';
+import { normalizeCameraWaypointKind } from '../camera-waypoints.js';
 
 import {
   button,
@@ -176,6 +177,7 @@ function renderTimelineWidget(context, snapshot, entry) {
   });
   buttonEl.className = 'jve-timeline-widget';
   buttonEl.dataset.widgetType = entry.type;
+  if (entry.type === 'camera') buttonEl.dataset.cameraKind = normalizeCameraWaypointKind(entry.waypoint.kind);
   if (entry.waypoint.motionGroup?.role) buttonEl.dataset.motionRole = String(entry.waypoint.motionGroup.role);
   if (isSelected(snapshot, entry.type, entry.waypoint.id)) buttonEl.classList.add('is-selected');
   const duration = Math.max(0.1, Number(snapshot.journey.durationSecs ?? 0));

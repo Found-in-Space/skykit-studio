@@ -16,6 +16,11 @@ import {
   normalizeJourneyVideoEditorState,
 } from './index.js';
 import { createJourneyVideoWorld } from './world.js';
+import {
+  createCameraWaypointForFrame,
+  createCameraWaypointMarkers,
+  patchCameraWaypoint,
+} from './editor/camera-waypoints.js';
 import { createJourneyVideoEditorView } from './editor/views.js';
 import {
   computeJourneyBounds,
@@ -231,14 +236,12 @@ function createEditorModel(options) {
       rebuild();
     },
     addCamera() {
-      const frame = evaluated;
-      const waypoint = {
-        id: nextId(journey.cameraLookWaypoints, 'cam'),
-        timeSecs: state.timeSecs,
-        kind: 'target',
-        targetPc: { ...frame.targetPc },
-        up: { ...frame.cameraUpPc },
-      };
+      const waypoint = createCameraWaypointForFrame(
+        nextId(journey.cameraLookWaypoints, 'cam'),
+        state.timeSecs,
+        evaluated,
+        'direction',
+      );
       journey = {
         ...journey,
         cameraLookWaypoints: sortByTime([...journey.cameraLookWaypoints, waypoint]),
@@ -303,7 +306,7 @@ function createEditorModel(options) {
       return exportJourneyVideoEditorDocument(document);
     },
     getViewSnapshot(ui = {}) {
-      return createEditorViewSnapshot(journey, state, evaluated, samples, world, ui);
+      return createEditorViewSnapshot(journey, state, evaluator, evaluated, samples, world, ui);
     },
     getSnapshot() {
       return {
@@ -341,9 +344,21 @@ function createEditorModel(options) {
     const target = findMutableWidget(journey, type, id);
     if (!target || !patch || typeof patch !== 'object') return;
     const source = /** @type {Record<string, unknown>} */ (patch);
+    if (type === 'camera') {
+      const index = journey.cameraLookWaypoints.findIndex((entry) => entry.id === id);
+      if (index < 0) return;
+      const frameAtKey = evaluator.evaluate(target.timeSecs ?? state.timeSecs);
+      const nextWaypoints = [...journey.cameraLookWaypoints];
+      nextWaypoints[index] = patchCameraWaypoint(target, source, frameAtKey);
+      journey = { ...journey, cameraLookWaypoints: sortByTime(nextWaypoints) };
+      rebuild();
+      return;
+    }
     for (const [key, value] of Object.entries(source)) {
-      if (key === 'positionPc' || key === 'targetPc' || key === 'up') {
+      if (key === 'positionPc' || key === 'targetPc' || key === 'forward' || key === 'up') {
         target[key] = clonePoint(value);
+      } else if (key === 'orientation') {
+        target[key] = cloneQuaternion(value);
       } else {
         target[key] = value;
       }
@@ -632,7 +647,7 @@ function queryRefs(host) {
   };
 }
 
-function createEditorViewSnapshot(journey, state, evaluated, samples, world, ui = {}) {
+function createEditorViewSnapshot(journey, state, evaluator, evaluated, samples, world, ui = {}) {
   const snapshotJourney = normalizeTimedJourney(journey);
   const snapshotSamples = samples.map(cloneFrame);
   return deepFreeze({
@@ -640,6 +655,7 @@ function createEditorViewSnapshot(journey, state, evaluated, samples, world, ui 
     editorState: normalizeJourneyVideoEditorState(state),
     evaluated: cloneFrame(evaluated),
     samples: snapshotSamples,
+    cameraMarkers: createCameraWaypointMarkers(snapshotJourney, evaluator),
     projectionData: {
       bounds: computeJourneyBounds(snapshotJourney, snapshotSamples),
     },
@@ -656,9 +672,12 @@ function cloneFrame(frame) {
     ...frame,
     observerPc: clonePoint(frame.observerPc),
     targetPc: clonePoint(frame.targetPc),
+    cameraForwardPc: clonePoint(frame.cameraForwardPc),
     velocityPcPerSec: clonePoint(frame.velocityPcPerSec),
+    velocityUnitVectorPc: clonePoint(frame.velocityUnitVectorPc),
     cameraUpPc: clonePoint(frame.cameraUpPc),
     orientationIcrs: frame.orientationIcrs ? { ...frame.orientationIcrs } : null,
+    cameraQuaternion: frame.cameraQuaternion ? { ...frame.cameraQuaternion } : null,
   };
 }
 
@@ -667,6 +686,15 @@ function clonePoint(point) {
     x: Number(point?.x ?? 0),
     y: Number(point?.y ?? 0),
     z: Number(point?.z ?? 0),
+  };
+}
+
+function cloneQuaternion(quaternion) {
+  return {
+    x: Number(quaternion?.x ?? 0),
+    y: Number(quaternion?.y ?? 0),
+    z: Number(quaternion?.z ?? 0),
+    w: Number(quaternion?.w ?? 1),
   };
 }
 

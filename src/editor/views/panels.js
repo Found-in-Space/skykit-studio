@@ -2,6 +2,10 @@
 import { Camera, MapPin, Plus } from 'lucide';
 
 import {
+  CAMERA_WAYPOINT_KINDS,
+  normalizeCameraWaypointKind,
+} from '../camera-waypoints.js';
+import {
   button,
   colorInput,
   destructiveRow,
@@ -18,6 +22,8 @@ import {
   panelHeading,
   panelTitleBar,
   pointText,
+  quaternionEditor,
+  selectInput,
   span,
   textInput,
   vectorEditor,
@@ -268,6 +274,7 @@ function renderWaypointFlowWidget(context, snapshot, entry) {
   const card = doc.createElement('section');
   card.className = 'jve-widget-card jve-waypoint-widget';
   card.dataset.widgetType = entry.type;
+  if (entry.type === 'camera') card.dataset.cameraKind = normalizeCameraWaypointKind(entry.waypoint.kind);
   if (entry.waypoint.motionGroup?.role) card.dataset.motionRole = String(entry.waypoint.motionGroup.role);
   if (selected) card.classList.add('is-selected', 'is-expanded');
   card.append(widgetSummary(context, {
@@ -275,7 +282,9 @@ function renderWaypointFlowWidget(context, snapshot, entry) {
     id: entry.waypoint.id,
     icon: iconForWidgetType(entry.type),
     label: entry.label,
-    meta: `${formatNumber(entry.waypoint.timeSecs)}s`,
+    meta: entry.type === 'camera'
+      ? `${formatNumber(entry.waypoint.timeSecs)}s ${normalizeCameraWaypointKind(entry.waypoint.kind)}`
+      : `${formatNumber(entry.waypoint.timeSecs)}s`,
     selected,
   }));
   if (selected) card.append(renderWaypointEditor(context, snapshot, entry));
@@ -290,9 +299,7 @@ function renderWaypointEditor(context, snapshot, entry) {
     context.dispatch({ type: 'updateWidgetTime', widgetType: entry.type, id: entry.waypoint.id, timeSecs });
   }, { step: 0.05 })));
   if (entry.type === 'camera') {
-    editor.append(vectorEditor(doc, 'Target', entry.waypoint.targetPc ?? snapshot.evaluated.targetPc, (pointPc) => {
-      context.dispatch({ type: 'updateWidgetPoint', widgetType: 'camera', id: entry.waypoint.id, pointPc });
-    }));
+    appendCameraWaypointEditor(context, snapshot, editor, entry.waypoint);
   } else {
     editor.append(vectorEditor(doc, 'Position', entry.waypoint.positionPc, (pointPc) => {
       context.dispatch({ type: 'updateWidgetPoint', widgetType: 'location', id: entry.waypoint.id, pointPc });
@@ -323,6 +330,81 @@ function renderWaypointEditor(context, snapshot, entry) {
     context.dispatch({ type: 'deleteWidget', widgetType: entry.type, id: entry.waypoint.id });
   }, 'is-danger')));
   return editor;
+}
+
+function appendCameraWaypointEditor(context, snapshot, editor, waypoint) {
+  const doc = context.doc;
+  const kind = normalizeCameraWaypointKind(waypoint.kind);
+  editor.append(field(doc, 'Mode', selectInput(doc, kind, CAMERA_WAYPOINT_KINDS.map((value) => ({
+    value,
+    label: value,
+  })), (value) => {
+    context.dispatch({ type: 'patchWidget', widgetType: 'camera', id: waypoint.id, patch: { kind: value } });
+  })));
+  if (kind === 'target') {
+    editor.append(
+      field(doc, 'Guide', guideTargetPicker(context, snapshot, waypoint)),
+      vectorEditor(doc, 'Target', waypoint.targetPc ?? snapshot.evaluated.targetPc, (pointPc) => {
+        context.dispatch({ type: 'patchWidget', widgetType: 'camera', id: waypoint.id, patch: { targetPc: pointPc } });
+      }),
+      vectorEditor(doc, 'Up', waypoint.up ?? snapshot.evaluated.cameraUpPc, (pointPc) => {
+        context.dispatch({ type: 'patchWidget', widgetType: 'camera', id: waypoint.id, patch: { up: pointPc } });
+      }),
+    );
+    return;
+  }
+  if (kind === 'quaternion') {
+    editor.append(quaternionEditor(doc, 'Orientation', waypoint.orientation ?? snapshot.evaluated.orientationIcrs, (orientation) => {
+      context.dispatch({ type: 'patchWidget', widgetType: 'camera', id: waypoint.id, patch: { orientation } });
+    }));
+    return;
+  }
+  editor.append(
+    vectorEditor(doc, 'Forward', waypoint.forward ?? snapshot.evaluated.cameraForwardPc, (pointPc) => {
+      context.dispatch({ type: 'patchWidget', widgetType: 'camera', id: waypoint.id, patch: { forward: pointPc } });
+    }),
+    vectorEditor(doc, 'Up', waypoint.up ?? snapshot.evaluated.cameraUpPc, (pointPc) => {
+      context.dispatch({ type: 'patchWidget', widgetType: 'camera', id: waypoint.id, patch: { up: pointPc } });
+    }),
+  );
+}
+
+function guideTargetPicker(context, snapshot, waypoint) {
+  const doc = context.doc;
+  const select = doc.createElement('select');
+  const placeholder = doc.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Copy guide position...';
+  select.append(placeholder);
+  let matchedGuideId = '';
+  for (const guide of snapshot.journey.guides ?? []) {
+    const guideLabel = guide.label || guide.id;
+    const option = doc.createElement('option');
+    option.value = guide.id;
+    option.textContent = guideLabel;
+    select.append(option);
+    if (
+      waypoint.targetGuide
+      && (waypoint.targetGuide.id === guide.id || (!matchedGuideId && waypoint.targetGuide.label === guideLabel))
+    ) {
+      matchedGuideId = guide.id;
+    }
+  }
+  select.value = matchedGuideId;
+  select.addEventListener('change', () => {
+    const guide = (snapshot.journey.guides ?? []).find((entry) => entry.id === select.value);
+    if (!guide) return;
+    context.dispatch({
+      type: 'patchWidget',
+      widgetType: 'camera',
+      id: waypoint.id,
+      patch: {
+        targetPc: guide.positionPc,
+        targetGuide: { id: guide.id, label: guide.label || guide.id },
+      },
+    });
+  });
+  return select;
 }
 
 function renderRangeEditor(context, snapshot, range) {

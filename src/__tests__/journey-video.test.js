@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {
+  createTimedJourneyEvaluator,
+  normalizeTimedJourney,
+} from '@found-in-space/journey';
 import * as THREE from 'three';
 
 import { createJourneyVideoEditor } from '../editor.js';
@@ -32,6 +36,12 @@ import {
   projectJourneyEditorPoint,
   unprojectJourneyEditorPoint,
 } from '../editor/projection.js';
+import {
+  createCameraWaypointForFrame,
+  createCameraWaypointMarkers,
+  cameraWaypointStyle,
+  patchCameraWaypoint,
+} from '../editor/camera-waypoints.js';
 
 const SAMPLE_JOURNEY = {
   format: 'fis-journey-v1',
@@ -116,6 +126,10 @@ test('projection helpers map journey widgets into stable tile coordinates and hi
   assert.equal(transform.mode, 'xz');
   assert.ok(Number.isFinite(projected.x));
   assert.equal(hit?.id, 'guide-a');
+  assert.equal(hitJourneyEditorMarker([
+    { type: 'guide', id: 'guide-a', x: projected.x, y: projected.y, radius: 12 },
+    { type: 'camera', id: 'cam-a', x: projected.x, y: projected.y, radius: 12 },
+  ], projected.x, projected.y)?.id, 'cam-a');
 });
 
 test('projection views share explicit units per parsec', () => {
@@ -137,6 +151,87 @@ test('projection views share explicit units per parsec', () => {
   assert.ok(Math.abs(roundTrip.x - guide.positionPc.x) < 1e-9);
   assert.ok(Math.abs(roundTrip.y - guide.positionPc.y) < 1e-9);
   assert.ok(Math.abs(roundTrip.z - guide.positionPc.z) < 1e-9);
+});
+
+test('camera waypoint markers derive stable positions for target, direction, and quaternion keys', () => {
+  const journey = normalizeTimedJourney({
+    ...SAMPLE_JOURNEY,
+    cameraLookWaypoints: [
+      { id: 'cam-target', timeSecs: 0, kind: 'target', targetPc: { x: 1, y: 2, z: 3 } },
+      { id: 'cam-direction', timeSecs: 5, kind: 'direction', forward: { x: 0, y: 0, z: -1 }, up: { x: 0, y: 1, z: 0 } },
+      { id: 'cam-quaternion', timeSecs: 10, kind: 'quaternion', orientation: { x: 0, y: 0, z: 0, w: 1 } },
+    ],
+  });
+  const evaluator = createTimedJourneyEvaluator(journey);
+  const markers = createCameraWaypointMarkers(journey, evaluator);
+  const transform = createJourneyProjectionTransform({
+    mode: 'xz',
+    width: 400,
+    height: 300,
+    unitsPerParsec: 3,
+  });
+
+  assert.deepEqual(markers.map((marker) => marker.kind), ['target', 'direction', 'quaternion']);
+  assert.deepEqual(markers.find((marker) => marker.id === 'cam-target')?.pointPc, { x: 1, y: 2, z: 3 });
+  assert.deepEqual(markers.find((marker) => marker.id === 'cam-direction')?.pointPc, evaluator.evaluate(5).observerPc);
+  assert.deepEqual(markers.find((marker) => marker.id === 'cam-quaternion')?.pointPc, evaluator.evaluate(10).observerPc);
+  for (const marker of markers) {
+    const projected = projectJourneyEditorPoint(marker.pointPc, transform);
+    assert.equal(Number.isFinite(projected.x), true);
+    assert.equal(Number.isFinite(projected.y), true);
+  }
+});
+
+test('camera waypoint helpers seed and patch the current timed camera model', () => {
+  const frame = {
+    sceneTimeSecs: 4,
+    targetPc: { x: 5, y: 6, z: 7 },
+    cameraForwardPc: { x: 0.1, y: 0.2, z: -0.9 },
+    cameraUpPc: { x: 0, y: 1, z: 0 },
+    orientationIcrs: { x: 0.2, y: 0.3, z: 0.4, w: 0.8 },
+  };
+  const added = createCameraWaypointForFrame('cam-new', 4, frame);
+  const asTarget = patchCameraWaypoint(added, { kind: 'target' }, frame);
+  const asQuaternion = patchCameraWaypoint(asTarget, { kind: 'quaternion' }, frame);
+  const asDirection = patchCameraWaypoint(asQuaternion, {
+    kind: 'direction',
+    forward: { x: 1, y: 0, z: 0 },
+    up: { x: 0, y: 0, z: 1 },
+  }, frame);
+  const guideTarget = patchCameraWaypoint({ ...asTarget, id: 'cam-guide' }, {
+    targetPc: SAMPLE_JOURNEY.guides[0].positionPc,
+    targetGuide: { id: 'guide-a', label: 'Guide A' },
+  }, frame);
+  const manualTarget = patchCameraWaypoint(guideTarget, {
+    targetPc: { x: 9, y: 8, z: 7 },
+  }, frame);
+  const normalized = normalizeTimedJourney({
+    durationSecs: 5,
+    cameraLookWaypoints: [asTarget, asQuaternion, asDirection, guideTarget],
+  });
+
+  assert.equal(added.kind, 'direction');
+  assert.deepEqual(added.forward, frame.cameraForwardPc);
+  assert.deepEqual(added.up, frame.cameraUpPc);
+  assert.equal(asTarget.kind, 'target');
+  assert.deepEqual(asTarget.targetPc, frame.targetPc);
+  assert.deepEqual(asTarget.up, frame.cameraUpPc);
+  assert.equal(asQuaternion.kind, 'quaternion');
+  assert.deepEqual(asQuaternion.orientation, frame.orientationIcrs);
+  assert.equal(asDirection.kind, 'direction');
+  assert.deepEqual(asDirection.forward, { x: 1, y: 0, z: 0 });
+  assert.deepEqual(asDirection.up, { x: 0, y: 0, z: 1 });
+  assert.deepEqual(guideTarget.targetPc, SAMPLE_JOURNEY.guides[0].positionPc);
+  assert.deepEqual(guideTarget.targetGuide, { id: 'guide-a', label: 'Guide A' });
+  assert.equal('targetGuide' in manualTarget, false);
+  assert.equal(normalized.cameraLookWaypoints.length, 4);
+  assert.equal(normalized.cameraLookWaypoints.filter((waypoint) => waypoint.kind === 'target').length, 2);
+  assert.equal(normalized.cameraLookWaypoints.filter((waypoint) => waypoint.kind === 'direction').length, 1);
+  assert.equal(normalized.cameraLookWaypoints.filter((waypoint) => waypoint.kind === 'quaternion').length, 1);
+  assert.deepEqual(normalized.cameraLookWaypoints.find((waypoint) => waypoint.id === 'cam-guide')?.targetGuide, { id: 'guide-a', label: 'Guide A' });
+  assert.equal(cameraWaypointStyle('target').color, '#ffb454');
+  assert.equal(cameraWaypointStyle('direction').color, '#5ddcff');
+  assert.equal(cameraWaypointStyle('quaternion').color, '#72d7ff');
 });
 
 test('axis indicators map projection planes into the shared glyph model', () => {
