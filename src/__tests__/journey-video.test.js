@@ -4,6 +4,10 @@ import {
   createTimedJourneyEvaluator,
   normalizeTimedJourney,
 } from '@found-in-space/journey';
+import {
+  easeTimedJourneyLocationRange,
+  equalizeTimedJourneyLocationRangeSpeed,
+} from '@found-in-space/journey/authoring';
 import * as THREE from 'three';
 
 import { createJourneyVideoEditor } from '../editor.js';
@@ -77,6 +81,7 @@ test('editor state normalization preserves safe tile, scale, selection, and draf
     unitsPerParsec: 200,
     selectedWidget: { type: 'guide', id: 'guide-a' },
     selectedLocationRange: { anchorId: 'loc-a', focusId: 'loc-b' },
+    easeSecs: 4.5,
     timeSecs: 3.25,
     playing: true,
   });
@@ -85,9 +90,11 @@ test('editor state normalization preserves safe tile, scale, selection, and draf
   assert.equal(state.unitsPerParsec, 80);
   assert.deepEqual(state.selectedWidget, { type: 'guide', id: 'guide-a' });
   assert.deepEqual(state.selectedLocationRange, { anchorId: 'loc-a', focusId: 'loc-b' });
+  assert.equal(state.easeSecs, 4.5);
   assert.equal(state.timeSecs, 3.25);
   assert.equal(state.playing, true);
   assert.equal(normalizeJourneyVideoEditorState({ zoom: 25 }).unitsPerParsec, DEFAULT_EDITOR_UNITS_PER_PARSEC);
+  assert.equal(normalizeJourneyVideoEditorState({ easeSecs: -10 }).easeSecs, 0.05);
 });
 
 test('editor documents import and export fis journey data without website fields', () => {
@@ -107,6 +114,37 @@ test('editor documents import and export fis journey data without website fields
 
   const rawJourney = importJourneyVideoEditorDocument(JSON.stringify(SAMPLE_JOURNEY));
   assert.equal(rawJourney.journey.id, 'editor-test');
+});
+
+test('journey authoring retiming tools produce editor-friendly timed journeys', () => {
+  const journey = {
+    ...SAMPLE_JOURNEY,
+    locationWaypoints: [
+      { id: 'loc-a', timeSecs: 0, positionPc: { x: 0, y: 0, z: 0 } },
+      { id: 'loc-hold', timeSecs: 2, positionPc: { x: 0, y: 0, z: 0 } },
+      { id: 'loc-b', timeSecs: 5, positionPc: { x: 1, y: 0, z: 0 } },
+      { id: 'loc-c', timeSecs: 10, positionPc: { x: 10, y: 0, z: 0 } },
+    ],
+  };
+  const equalized = equalizeTimedJourneyLocationRangeSpeed(journey, {
+    anchorId: 'loc-a',
+    focusId: 'loc-c',
+    timeStepSecs: 0.05,
+  });
+  const eased = easeTimedJourneyLocationRange(journey, {
+    anchorId: 'loc-a',
+    focusId: 'loc-c',
+    easeSecs: 2,
+    rampSampleSecs: 1,
+    timeStepSecs: 0.05,
+  });
+
+  assert.equal(equalized.journey.locationWaypoints.find((waypoint) => waypoint.id === 'loc-hold')?.timeSecs, 2);
+  assert.equal(equalized.journey.locationWaypoints.find((waypoint) => waypoint.id === 'loc-b')?.timeSecs, 2.8);
+  assert.ok(eased.startGroupId);
+  assert.ok(eased.endGroupId);
+  assert.notEqual(eased.startGroupId, eased.endGroupId);
+  assert.equal(eased.journey.locationWaypoints.some((waypoint) => waypoint.motionGroup?.role === 'helper'), true);
 });
 
 test('projection helpers map journey widgets into stable tile coordinates and hit tests', () => {

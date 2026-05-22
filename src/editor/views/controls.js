@@ -180,10 +180,35 @@ function renderTimelineWidget(context, snapshot, entry) {
   if (entry.type === 'camera') buttonEl.dataset.cameraKind = normalizeCameraWaypointKind(entry.waypoint.kind);
   if (entry.waypoint.motionGroup?.role) buttonEl.dataset.motionRole = String(entry.waypoint.motionGroup.role);
   if (isSelected(snapshot, entry.type, entry.waypoint.id)) buttonEl.classList.add('is-selected');
+  if (entry.type === 'location' && isLocationInSelectedRange(snapshot, entry.waypoint.id)) buttonEl.classList.add('is-in-range');
+  if (entry.type === 'location' && isWaypointInSelectedLocationGroup(snapshot, entry.waypoint)) buttonEl.classList.add('is-in-group');
   const duration = Math.max(0.1, Number(snapshot.journey.durationSecs ?? 0));
   buttonEl.style.left = `${(Number(entry.waypoint.timeSecs ?? 0) / duration) * 100}%`;
   buttonEl.addEventListener('pointerdown', (event) => beginTimelineDrag(context, snapshot, entry, buttonEl, event));
   return buttonEl;
+}
+
+function isLocationInSelectedRange(snapshot, id) {
+  const range = snapshot.editorState.selectedLocationRange;
+  if (!range) return false;
+  const waypoints = snapshot.journey.locationWaypoints ?? [];
+  const anchor = waypoints.find((waypoint) => waypoint.id === range.anchorId);
+  const focus = waypoints.find((waypoint) => waypoint.id === range.focusId);
+  const current = waypoints.find((waypoint) => waypoint.id === id);
+  if (!anchor || !focus || !current) return false;
+  const minTime = Math.min(Number(anchor.timeSecs ?? 0), Number(focus.timeSecs ?? 0));
+  const maxTime = Math.max(Number(anchor.timeSecs ?? 0), Number(focus.timeSecs ?? 0));
+  const timeSecs = Number(current.timeSecs ?? 0);
+  return timeSecs >= minTime && timeSecs <= maxTime;
+}
+
+function isWaypointInSelectedLocationGroup(snapshot, waypoint) {
+  const groupId = snapshot.editorState.selectedLocationGroupId;
+  if (!groupId || !waypoint?.motionGroup) return false;
+  const group = waypoint.motionGroup;
+  return group.id === groupId
+    && group.kind === 'ease'
+    && (!snapshot.editorState.selectedLocationGroupPhase || group.phase === snapshot.editorState.selectedLocationGroupPhase);
 }
 
 function beginTimelineDrag(context, snapshot, entry, buttonEl, event) {

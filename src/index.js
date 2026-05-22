@@ -13,6 +13,7 @@ export const DEFAULT_JOURNEY_VIDEO_EDITOR_STATE = Object.freeze({
   selectedLocationRange: null,
   selectedLocationGroupId: null,
   selectedLocationGroupPhase: null,
+  easeSecs: 3,
   timeSecs: 0,
   playing: false,
 });
@@ -48,6 +49,11 @@ export function normalizeJourneyVideoEditorState(input = {}) {
     selectedLocationGroupPhase: source.selectedLocationGroupPhase === 'start' || source.selectedLocationGroupPhase === 'end'
       ? source.selectedLocationGroupPhase
       : null,
+    easeSecs: clamp(
+      Number(source.easeSecs ?? DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.easeSecs),
+      0.05,
+      60,
+    ),
     timeSecs: Math.max(0, finiteNumber(source.timeSecs, 0)),
     playing: source.playing === true,
   };

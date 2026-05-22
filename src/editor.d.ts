@@ -47,6 +47,9 @@ export interface JourneyVideoEditorSnapshot {
   tileModes: JourneyVideoEditorTileMode[];
   selectedWidget: JourneyVideoEditorWidgetRef | null;
   selectedLocationRange: JourneyVideoEditorState['selectedLocationRange'];
+  selectedLocationGroupId: string | null;
+  selectedLocationGroupPhase: 'start' | 'end' | null;
+  easeSecs: number;
   locationWaypointCount: number;
   cameraWaypointCount: number;
   guideCount: number;

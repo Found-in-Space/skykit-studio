@@ -24,6 +24,7 @@ export interface JourneyVideoEditorState {
   selectedLocationRange: JourneyVideoEditorLocationRangeRef | null;
   selectedLocationGroupId: string | null;
   selectedLocationGroupPhase: 'start' | 'end' | null;
+  easeSecs: number;
   timeSecs: number;
   playing: boolean;
 }

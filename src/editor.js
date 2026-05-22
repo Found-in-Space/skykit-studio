@@ -2,12 +2,14 @@
 
 import {
   createTimedJourneyEvaluator,
-  deleteJourneyEaseLocationGroupHelpers,
-  easeJourneyLocationRangeStartEnd,
-  equalizeJourneyLocationRangeSpeeds,
   normalizeTimedJourney,
-  rebuildJourneyEaseLocationGroup,
 } from '@found-in-space/journey';
+import {
+  deleteTimedJourneyEaseGroup,
+  easeTimedJourneyLocationRange,
+  equalizeTimedJourneyLocationRangeSpeed,
+  rebuildTimedJourneyEaseGroup,
+} from '@found-in-space/journey/authoring';
 
 import {
   createJourneyVideoEditorDocument,
@@ -186,6 +188,11 @@ function createEditorModel(options) {
       state.unitsPerParsec = clamp(Number(unitsPerParsec), 0.25, 80);
       persist();
     },
+    setEaseSecs(easeSecs) {
+      assertActive();
+      state.easeSecs = clamp(Number(easeSecs), TIMELINE_STEP_SECS, 60);
+      persist();
+    },
     selectWidget(type, id, options = {}) {
       assertActive();
       const ref = findWidget(journey, type, id);
@@ -274,23 +281,49 @@ function createEditorModel(options) {
       deleteWidget(type, id);
     },
     equalizeLocationRange(anchorId, focusId) {
-      const result = equalizeJourneyLocationRangeSpeeds(journey.locationWaypoints, anchorId, focusId);
-      journey = { ...journey, locationWaypoints: result.locationWaypoints };
+      const result = equalizeTimedJourneyLocationRangeSpeed(journey, {
+        anchorId,
+        focusId,
+        timeStepSecs: TIMELINE_STEP_SECS,
+      });
+      journey = result.journey;
+      state.selectedLocationRange = { anchorId, focusId };
       rebuild();
     },
     easeLocationRange(anchorId, focusId) {
-      const result = easeJourneyLocationRangeStartEnd(journey.locationWaypoints, anchorId, focusId);
-      journey = { ...journey, locationWaypoints: result.locationWaypoints };
+      const result = easeTimedJourneyLocationRange(journey, {
+        anchorId,
+        focusId,
+        easeSecs: state.easeSecs,
+        rampSampleSecs: 0.5,
+        timeStepSecs: TIMELINE_STEP_SECS,
+      });
+      journey = result.journey;
+      state.selectedLocationRange = { anchorId, focusId };
+      state.selectedLocationGroupId = result.startGroupId ?? null;
+      state.selectedLocationGroupPhase = result.startGroupId ? 'start' : null;
       rebuild();
     },
     rebuildEaseGroup(groupId, phase) {
-      const result = rebuildJourneyEaseLocationGroup(journey.locationWaypoints, groupId, { phase });
-      journey = { ...journey, locationWaypoints: result.locationWaypoints };
+      const result = rebuildTimedJourneyEaseGroup(journey, groupId, {
+        phase,
+        easeSecs: state.easeSecs,
+        rampSampleSecs: 0.5,
+        timeStepSecs: TIMELINE_STEP_SECS,
+      });
+      journey = result.journey;
+      state.selectedLocationGroupId = groupId;
+      state.selectedLocationGroupPhase = phase === 'start' || phase === 'end' ? phase : null;
+      if (result.before?.startId && result.before?.endId) {
+        state.selectedLocationRange = { anchorId: result.before.startId, focusId: result.before.endId };
+      }
       rebuild();
     },
     deleteEaseHelpers(groupId, phase) {
-      const result = deleteJourneyEaseLocationGroupHelpers(journey.locationWaypoints, groupId, { phase });
-      journey = { ...journey, locationWaypoints: result.locationWaypoints };
+      const result = deleteTimedJourneyEaseGroup(journey, groupId, { phase });
+      journey = result.journey;
+      state.selectedLocationGroupId = null;
+      state.selectedLocationGroupPhase = null;
       rebuild();
     },
     selectLocationGroup(groupId, phase) {
@@ -319,6 +352,9 @@ function createEditorModel(options) {
         tileModes: [...state.tileModes],
         selectedWidget: state.selectedWidget ? { ...state.selectedWidget } : null,
         selectedLocationRange: state.selectedLocationRange ? { ...state.selectedLocationRange } : null,
+        selectedLocationGroupId: state.selectedLocationGroupId,
+        selectedLocationGroupPhase: state.selectedLocationGroupPhase,
+        easeSecs: state.easeSecs,
         locationWaypointCount: journey.locationWaypoints.length,
         cameraWaypointCount: journey.cameraLookWaypoints.length,
         guideCount: journey.guides.length,
@@ -502,6 +538,10 @@ function mountEditor(host, model, options) {
     }
     if (action.type === 'setUnitsPerParsec') {
       model.setUnitsPerParsec(Number(action.unitsPerParsec));
+      return true;
+    }
+    if (action.type === 'setEaseSecs') {
+      model.setEaseSecs(Number(action.easeSecs));
       return true;
     }
     if (action.type === 'setTime') {

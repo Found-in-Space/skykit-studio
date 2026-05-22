@@ -1,4 +1,11 @@
 // @ts-nocheck
+import {
+  getJourneyLocationRangeSpeedStats,
+} from '@found-in-space/journey';
+import {
+  easeTimedJourneyLocationRange,
+  equalizeTimedJourneyLocationRangeSpeed,
+} from '@found-in-space/journey/authoring';
 import { Camera, MapPin, Plus } from 'lucide';
 
 import {
@@ -277,6 +284,9 @@ function renderWaypointFlowWidget(context, snapshot, entry) {
   if (entry.type === 'camera') card.dataset.cameraKind = normalizeCameraWaypointKind(entry.waypoint.kind);
   if (entry.waypoint.motionGroup?.role) card.dataset.motionRole = String(entry.waypoint.motionGroup.role);
   if (selected) card.classList.add('is-selected', 'is-expanded');
+  if (entry.type === 'location' && isWaypointInSelectedLocationGroup(snapshot, entry.waypoint)) {
+    card.classList.add('is-in-group');
+  }
   card.append(widgetSummary(context, {
     type: entry.type,
     id: entry.waypoint.id,
@@ -307,6 +317,9 @@ function renderWaypointEditor(context, snapshot, entry) {
   }
   if (entry.type === 'location' && entry.waypoint.motionGroup?.id) {
     const group = entry.waypoint.motionGroup;
+    editor.append(field(doc, 'Ease secs', numberInput(doc, group.easeSecs ?? snapshot.editorState.easeSecs ?? 3, (easeSecs) => {
+      context.dispatch({ type: 'setEaseSecs', easeSecs });
+    }, { min: 0.05, step: 0.05 })));
     const row = doc.createElement('div');
     row.className = 'jve-button-row';
     row.append(
@@ -412,20 +425,59 @@ function renderRangeEditor(context, snapshot, range) {
   const section = doc.createElement('section');
   section.className = 'jve-widget-card is-expanded';
   section.append(panelHeading(doc, 'Location range'));
-  section.append(keyValueGrid(doc, [
-    ['from', range.anchorId],
-    ['to', range.focusId],
-    ['waypoints', String(range.stats?.waypointCount ?? 0)],
-    ['distance', `${Number(range.stats?.totalLengthPc ?? 0).toFixed(2)} pc`],
-    ['avg speed', `${Number(range.stats?.averageSpeedPcPerSec ?? 0).toFixed(2)} pc/s`],
-  ]));
+  const easeSecs = clampEaseSecs(snapshot.editorState.easeSecs, range.stats);
+  const retimeOptions = {
+    anchorId: range.anchorId,
+    focusId: range.focusId,
+    easeSecs,
+    rampSampleSecs: 0.5,
+    timeStepSecs: 0.05,
+  };
+  const equalizePreview = equalizeTimedJourneyLocationRangeSpeed(snapshot.journey, retimeOptions);
+  const easePreview = easeTimedJourneyLocationRange(snapshot.journey, retimeOptions);
+  section.append(
+    field(doc, 'Ease secs', numberInput(doc, easeSecs, (value) => {
+      context.dispatch({ type: 'setEaseSecs', easeSecs: value });
+    }, { min: 0.05, step: 0.05 })),
+    rangeDiagnosticSection(doc, 'Before', range.stats),
+    rangeDiagnosticSection(doc, 'After equalize', equalizePreview.after),
+    rangeDiagnosticSection(doc, 'After ease', easePreview.after, [
+      ['ease secs', `${formatNumber(easePreview.effectiveEaseSecs ?? easeSecs)}s`],
+      ['helpers', String(easePreview.insertedIds.length)],
+    ]),
+  );
   const row = doc.createElement('div');
   row.className = 'jve-button-row';
+  const equalizeButton = button(doc, 'Equalize speed', () => context.dispatch({ type: 'equalizeLocationRange', anchorId: range.anchorId, focusId: range.focusId }));
+  equalizeButton.disabled = !range.stats || equalizePreview.changedIds.length === 0;
+  const easeButton = button(doc, 'Ease start/end', () => context.dispatch({ type: 'easeLocationRange', anchorId: range.anchorId, focusId: range.focusId }));
+  easeButton.disabled = !range.stats || (easePreview.changedIds.length === 0 && easePreview.insertedIds.length === 0);
   row.append(
-    button(doc, 'Equalize speed', () => context.dispatch({ type: 'equalizeLocationRange', anchorId: range.anchorId, focusId: range.focusId })),
-    button(doc, 'Ease start/end', () => context.dispatch({ type: 'easeLocationRange', anchorId: range.anchorId, focusId: range.focusId })),
+    equalizeButton,
+    easeButton,
   );
   section.append(row);
+  return section;
+}
+
+function rangeDiagnosticSection(doc, title, stats, extraRows = []) {
+  const section = doc.createElement('div');
+  section.className = 'jve-diagnostic-section';
+  section.append(panelHeading(doc, title));
+  if (!stats) {
+    section.append(emptyText(doc, 'No range data'));
+    return section;
+  }
+  section.append(keyValueGrid(doc, [
+    ['from', stats.startId],
+    ['to', stats.endId],
+    ['waypoints', String(stats.waypointCount)],
+    ['distance', `${formatNumber(stats.totalLengthPc)} pc`],
+    ['avg speed', `${formatNumber(stats.averageSpeedPcPerSec)} pc/s`],
+    ['min speed', `${formatNumber(stats.minSpeedPcPerSec)} pc/s`],
+    ['max speed', `${formatNumber(stats.maxSpeedPcPerSec)} pc/s`],
+    ...extraRows,
+  ]));
   return section;
 }
 
@@ -477,35 +529,24 @@ function selectedLocationRangeInfo(snapshot) {
   if (!range) return null;
   const ids = new Set((snapshot.journey.locationWaypoints ?? []).map((waypoint) => waypoint.id));
   if (!ids.has(range.anchorId) || !ids.has(range.focusId)) return null;
-  const selected = (snapshot.journey.locationWaypoints ?? [])
-    .filter((waypoint) => waypoint.id === range.anchorId || waypoint.id === range.focusId);
-  const [left, right] = selected.sort((a, b) => Number(a.timeSecs ?? 0) - Number(b.timeSecs ?? 0));
-  const minTime = Number(left?.timeSecs ?? 0);
-  const maxTime = Number(right?.timeSecs ?? minTime);
-  const waypoints = (snapshot.journey.locationWaypoints ?? [])
-    .filter((waypoint) => Number(waypoint.timeSecs ?? 0) >= minTime && Number(waypoint.timeSecs ?? 0) <= maxTime)
-    .sort((a, b) => Number(a.timeSecs ?? 0) - Number(b.timeSecs ?? 0));
-  let totalLengthPc = 0;
-  for (let index = 1; index < waypoints.length; index += 1) {
-    totalLengthPc += pointDistance(waypoints[index - 1].positionPc, waypoints[index].positionPc);
-  }
-  const durationSecs = Math.max(0, maxTime - minTime);
   return {
     ...range,
-    stats: {
-      waypointCount: waypoints.length,
-      totalLengthPc,
-      averageSpeedPcPerSec: durationSecs > 0 ? totalLengthPc / durationSecs : 0,
-    },
+    stats: getJourneyLocationRangeSpeedStats(snapshot.journey.locationWaypoints, range.anchorId, range.focusId),
   };
 }
 
-function pointDistance(left, right) {
-  return Math.hypot(
-    Number(right?.x ?? 0) - Number(left?.x ?? 0),
-    Number(right?.y ?? 0) - Number(left?.y ?? 0),
-    Number(right?.z ?? 0) - Number(left?.z ?? 0),
-  );
+function isWaypointInSelectedLocationGroup(snapshot, waypoint) {
+  const groupId = snapshot.editorState.selectedLocationGroupId;
+  if (!groupId || !waypoint?.motionGroup) return false;
+  const group = waypoint.motionGroup;
+  return group.id === groupId
+    && group.kind === 'ease'
+    && (!snapshot.editorState.selectedLocationGroupPhase || group.phase === snapshot.editorState.selectedLocationGroupPhase);
+}
+
+function clampEaseSecs(value, stats) {
+  const maxEaseSecs = Math.max(0.05, Number(stats?.durationSecs ?? 0) / 2 || 0.05);
+  return Math.min(maxEaseSecs, Math.max(0.05, Number(value ?? 3)));
 }
 
 function iconForWidgetType(type) {
