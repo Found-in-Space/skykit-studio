@@ -24,6 +24,8 @@ export interface JourneyVideoEditorPreviewOptions {
   /** Single conversion from authored parsecs to SkyKit/Three render units. Defaults to 0.02. */
   coordinateUnitsPerParsec?: number;
   limitingMagnitude?: number;
+  /** Persist fetched SkyKit star octree ranges in browser Cache Storage. Defaults to 'on' for the editor preview. */
+  persistentCache?: 'on' | 'off';
 }
 
 export interface JourneyVideoEditorBrandOptions {

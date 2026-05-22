@@ -48,6 +48,7 @@ export function createSkykitView() {
       camera = new THREE.PerspectiveCamera(60, 1, 0.001, 10000);
       provider = createStarOctreeProviderService({
         url: String(nextContext.preview?.octreeUrl ?? OCTREE_DEFAULT),
+        persistentCache: nextContext.preview?.persistentCache === 'off' ? 'off' : 'on',
       });
       const starField = createThreeStarField({
         renderScale: world.renderScale,
