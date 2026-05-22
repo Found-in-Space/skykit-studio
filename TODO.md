@@ -5,6 +5,8 @@ Implemented in the first alpha editor slice:
 - standalone vanilla-DOM editor package and example app;
 - timed journey JSON import/export/download;
 - projection, perspective, and SkyKit streamed-stars preview tiles;
+- dynamic pane layout state for single, two-pane, three-pane, and four-pane editor views;
+- free-roam guide scouting tile with star-pick guide creation;
 - guide/timeline editing and retiming/ease controls.
 
 Implemented in the first alpha export slice:

@@ -2,10 +2,43 @@ import type { TimedJourney } from '@found-in-space/journey';
 
 export declare const SKYKIT_STUDIO_PACKAGE_STATUS: 'alpha-editor';
 export declare const DEFAULT_EDITOR_UNITS_PER_PARSEC: 3;
-export declare const JOURNEY_VIDEO_EDITOR_TILE_MODES: readonly ['xy', 'xz', 'yz', 'perspective', 'skykit'];
+export declare const JOURNEY_VIDEO_EDITOR_TILE_MODES: readonly ['xy', 'xz', 'yz', 'perspective', 'preview', 'free-roam'];
+export declare const JOURNEY_VIDEO_EDITOR_PANE_LAYOUT_PRESETS: readonly [
+  'single',
+  'two-stacked',
+  'two-side-by-side',
+  'three-primary-left',
+  'three-primary-right',
+  'four-grid'
+];
 
-export type JourneyVideoEditorTileMode = 'xy' | 'xz' | 'yz' | 'perspective' | 'skykit';
+export type JourneyVideoEditorTileMode = 'xy' | 'xz' | 'yz' | 'perspective' | 'preview' | 'free-roam';
+export type JourneyVideoEditorPaneLayoutPreset =
+  | 'single'
+  | 'two-stacked'
+  | 'two-side-by-side'
+  | 'three-primary-left'
+  | 'three-primary-right'
+  | 'four-grid';
 export type JourneyVideoEditorWidgetType = 'location' | 'camera' | 'guide';
+
+export interface JourneyVideoEditorVector3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface JourneyVideoEditorQuaternion {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
+
+export interface JourneyVideoEditorPose {
+  observerPc: JourneyVideoEditorVector3;
+  orientationIcrs: JourneyVideoEditorQuaternion;
+}
 
 export interface JourneyVideoEditorWidgetRef {
   type: JourneyVideoEditorWidgetType;
@@ -17,9 +50,27 @@ export interface JourneyVideoEditorLocationRangeRef {
   focusId: string;
 }
 
+export interface JourneyVideoEditorPane {
+  id: string;
+  mode: JourneyVideoEditorTileMode;
+}
+
+export interface JourneyVideoEditorPaneLayout {
+  preset: JourneyVideoEditorPaneLayoutPreset;
+  paneIds: string[];
+  primaryPaneId: string | null;
+  previousLayout: JourneyVideoEditorPaneLayout | null;
+}
+
 export interface JourneyVideoEditorState {
+  panes: JourneyVideoEditorPane[];
+  paneLayout: JourneyVideoEditorPaneLayout;
+  /** @deprecated Use panes instead. */
   tileModes: JourneyVideoEditorTileMode[];
   unitsPerParsec: number;
+  /** @deprecated Use paneLayout instead. */
+  expandedTileIndex: number | null;
+  freeRoamPose: JourneyVideoEditorPose | null;
   selectedWidget: JourneyVideoEditorWidgetRef | null;
   selectedLocationRange: JourneyVideoEditorLocationRangeRef | null;
   selectedLocationGroupId: string | null;

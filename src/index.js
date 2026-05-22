@@ -2,13 +2,25 @@ import {
   FIS_JOURNEY_FORMAT,
   normalizeTimedJourney,
 } from '@found-in-space/journey';
+import {
+  DEFAULT_JOURNEY_VIDEO_EDITOR_PANE_LAYOUT,
+  DEFAULT_JOURNEY_VIDEO_EDITOR_PANES,
+  JOURNEY_VIDEO_EDITOR_PANE_LAYOUT_PRESETS,
+  JOURNEY_VIDEO_EDITOR_TILE_MODES,
+  normalizeJourneyVideoEditorPaneState,
+} from './editor/panes.js';
 
 export const SKYKIT_STUDIO_PACKAGE_STATUS = 'alpha-editor';
 export const DEFAULT_EDITOR_UNITS_PER_PARSEC = 3;
 
 export const DEFAULT_JOURNEY_VIDEO_EDITOR_STATE = Object.freeze({
-  tileModes: Object.freeze(['xy', 'xz', 'perspective', 'skykit']),
+  panes: DEFAULT_JOURNEY_VIDEO_EDITOR_PANES,
+  paneLayout: DEFAULT_JOURNEY_VIDEO_EDITOR_PANE_LAYOUT,
+  tileModes: Object.freeze(DEFAULT_JOURNEY_VIDEO_EDITOR_PANES.map((pane) => pane.mode)),
   unitsPerParsec: DEFAULT_EDITOR_UNITS_PER_PARSEC,
+  /** @deprecated Use paneLayout instead. */
+  expandedTileIndex: null,
+  freeRoamPose: null,
   selectedWidget: null,
   selectedLocationRange: null,
   selectedLocationGroupId: null,
@@ -18,13 +30,10 @@ export const DEFAULT_JOURNEY_VIDEO_EDITOR_STATE = Object.freeze({
   playing: false,
 });
 
-export const JOURNEY_VIDEO_EDITOR_TILE_MODES = Object.freeze([
-  'xy',
-  'xz',
-  'yz',
-  'perspective',
-  'skykit',
-]);
+export {
+  JOURNEY_VIDEO_EDITOR_PANE_LAYOUT_PRESETS,
+  JOURNEY_VIDEO_EDITOR_TILE_MODES,
+};
 
 /**
  * @param {unknown} input
@@ -32,17 +41,18 @@ export const JOURNEY_VIDEO_EDITOR_TILE_MODES = Object.freeze([
  */
 export function normalizeJourneyVideoEditorState(input = {}) {
   const source = /** @type {Record<string, unknown>} */ (input && typeof input === 'object' ? input : {});
-  const tileModes = Array.isArray(source.tileModes)
-    ? source.tileModes.map((mode, index) => normalizeTileMode(mode, DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.tileModes[index] ?? 'xy'))
-    : [...DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.tileModes];
-  while (tileModes.length < 4) tileModes.push(DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.tileModes[tileModes.length] ?? 'xy');
+  const paneState = normalizeJourneyVideoEditorPaneState(source);
   return {
-    tileModes: tileModes.slice(0, 4),
+    panes: paneState.panes,
+    paneLayout: paneState.paneLayout,
+    tileModes: paneState.tileModes,
     unitsPerParsec: clamp(
       Number(source.unitsPerParsec ?? DEFAULT_JOURNEY_VIDEO_EDITOR_STATE.unitsPerParsec),
       0.25,
       80,
     ),
+    expandedTileIndex: paneState.expandedTileIndex,
+    freeRoamPose: normalizeFreeRoamPose(source.freeRoamPose),
     selectedWidget: normalizeWidgetRef(source.selectedWidget),
     selectedLocationRange: normalizeLocationRange(source.selectedLocationRange),
     selectedLocationGroupId: typeof source.selectedLocationGroupId === 'string' ? source.selectedLocationGroupId : null,
@@ -116,10 +126,15 @@ export function createJourneyVideoStorage(storage, key = 'fis-journey-video-edit
   };
 }
 
-/** @param {unknown} mode @param {string} fallback */
-function normalizeTileMode(mode, fallback) {
-  const text = String(mode ?? '');
-  return JOURNEY_VIDEO_EDITOR_TILE_MODES.includes(text) ? text : fallback;
+/** @param {unknown} value */
+function normalizeFreeRoamPose(value) {
+  if (!value || typeof value !== 'object') return null;
+  const source = /** @type {Record<string, unknown>} */ (value);
+  if (!source.observerPc || typeof source.observerPc !== 'object') return null;
+  return {
+    observerPc: clonePoint(source.observerPc),
+    orientationIcrs: cloneQuaternion(source.orientationIcrs),
+  };
 }
 
 /** @param {unknown} value */
@@ -138,6 +153,27 @@ function normalizeLocationRange(value) {
   const anchorId = typeof source.anchorId === 'string' ? source.anchorId : null;
   const focusId = typeof source.focusId === 'string' ? source.focusId : null;
   return anchorId && focusId && anchorId !== focusId ? { anchorId, focusId } : null;
+}
+
+/** @param {unknown} point */
+function clonePoint(point) {
+  const source = /** @type {Record<string, unknown>} */ (point && typeof point === 'object' ? point : {});
+  return {
+    x: finiteNumber(source.x, 0),
+    y: finiteNumber(source.y, 0),
+    z: finiteNumber(source.z, 0),
+  };
+}
+
+/** @param {unknown} quaternion */
+function cloneQuaternion(quaternion) {
+  const source = /** @type {Record<string, unknown>} */ (quaternion && typeof quaternion === 'object' ? quaternion : {});
+  return {
+    x: finiteNumber(source.x, 0),
+    y: finiteNumber(source.y, 0),
+    z: finiteNumber(source.z, 0),
+    w: finiteNumber(source.w, 1),
+  };
 }
 
 /** @param {unknown} value @param {number} fallback */

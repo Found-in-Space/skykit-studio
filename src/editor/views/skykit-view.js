@@ -36,10 +36,10 @@ export function createSkykitView() {
   guideGroup.name = 'journey-video-editor-guides';
 
   return {
-    mode: 'skykit',
+    mode: 'preview',
     mount(nextContext) {
       shell = nextContext.doc.createElement('div');
-      shell.className = 'jve-skykit-tile';
+      shell.className = 'jve-preview-tile';
       nextContext.body.append(shell);
       axisIndicator = createAxisIndicatorOverlay(nextContext.doc);
       nextContext.body.append(axisIndicator.canvas);
@@ -92,8 +92,8 @@ export function createSkykitView() {
       pendingSnapshot = snapshot;
       if (ready) applySkykitState();
     },
-    resize() {
-      viewer?.resize?.();
+    resize(size) {
+      viewer?.resize?.(normalizeViewportSize(size));
     },
     async dispose() {
       disposed = true;
@@ -128,6 +128,15 @@ export function createSkykitView() {
     viewer.resize();
     axisIndicator?.renderCamera(viewer.camera);
   }
+}
+
+function normalizeViewportSize(size = {}) {
+  if (!size || size.width === undefined || size.height === undefined) return undefined;
+  return {
+    width: Math.max(1, Number(size.width) || 1),
+    height: Math.max(1, Number(size.height) || 1),
+    devicePixelRatio: Math.min(Number(size.devicePixelRatio ?? globalThis.devicePixelRatio) || 1, 2),
+  };
 }
 
 function createSkykitAxisIndicatorPlugin(getAxisIndicator) {

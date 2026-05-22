@@ -43,8 +43,8 @@ export function createProjectionView(mode) {
       snapshot = nextSnapshot;
       renderSnapshot();
     },
-    resize() {
-      renderSnapshot();
+    resize(size) {
+      renderSnapshot(size);
     },
     dispose() {
       canvas?.removeEventListener('click', onClick);
@@ -60,9 +60,9 @@ export function createProjectionView(mode) {
     },
   };
 
-  function renderSnapshot() {
+  function renderSnapshot(size) {
     if (!canvas || !snapshot) return;
-    const { width, height, context: drawing } = syncCanvas(canvas);
+    const { width, height, context: drawing } = syncCanvas(canvas, size);
     if (!drawing) return;
     projection = createJourneyProjectionTransform({
       mode,

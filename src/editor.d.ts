@@ -5,8 +5,12 @@ import type {
 import type {
   JourneyVideoEditorDocument,
   JourneyVideoEditorState,
+  JourneyVideoEditorPane,
+  JourneyVideoEditorPaneLayout,
+  JourneyVideoEditorPaneLayoutPreset,
   JourneyVideoEditorTileMode,
   JourneyVideoEditorWidgetRef,
+  JourneyVideoEditorPose,
   JourneyVideoStorage,
 } from './index.js';
 
@@ -24,6 +28,9 @@ export interface JourneyVideoEditorPreviewOptions {
   /** Single conversion from authored parsecs to SkyKit/Three render units. Defaults to 0.02. */
   coordinateUnitsPerParsec?: number;
   limitingMagnitude?: number;
+  freeRoamSpeedPcPerSec?: number;
+  freeRoamBoostMultiplier?: number;
+  freeRoamLookSensitivity?: number;
   /** Persist fetched SkyKit star octree ranges in browser Cache Storage. Defaults to 'on' for the editor preview. */
   persistentCache?: 'on' | 'off';
 }
@@ -53,7 +60,13 @@ export interface JourneyVideoEditorSnapshot {
   durationSecs: number;
   timeSecs: number;
   playing: boolean;
+  panes: JourneyVideoEditorPane[];
+  paneLayout: JourneyVideoEditorPaneLayout;
+  /** @deprecated Use panes instead. */
   tileModes: JourneyVideoEditorTileMode[];
+  /** @deprecated Use paneLayout instead. */
+  expandedTileIndex: number | null;
+  freeRoamPose: JourneyVideoEditorPose | null;
   selectedWidget: JourneyVideoEditorWidgetRef | null;
   selectedLocationRange: JourneyVideoEditorState['selectedLocationRange'];
   selectedLocationGroupId: string | null;
@@ -71,7 +84,15 @@ export interface JourneyVideoEditor {
   setTime(timeSecs: number): void;
   play(): void;
   pause(): void;
+  /** @deprecated Use setPaneMode with a pane id instead. */
   setTileMode(index: number, mode: JourneyVideoEditorTileMode): void;
+  /** @deprecated Use setPaneLayout('single', [paneId]) or setPaneLayout(...) instead. */
+  setExpandedTileIndex(index: number | null): void;
+  addPane(mode?: JourneyVideoEditorTileMode): string | null;
+  removePane(paneId: string): void;
+  setPaneMode(paneId: string, mode: JourneyVideoEditorTileMode): void;
+  setPaneLayout(preset: JourneyVideoEditorPaneLayoutPreset, paneIds?: string[]): void;
+  movePane(paneId: string, direction: 'previous' | 'next' | 'left' | 'right' | 'up' | 'down'): void;
   setUnitsPerParsec(unitsPerParsec: number): void;
   selectWidget(type: JourneyVideoEditorWidgetRef['type'], id: string): void;
   getSnapshot(): JourneyVideoEditorSnapshot;

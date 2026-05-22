@@ -385,6 +385,8 @@ textarea {
 .jve-view-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 46px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--line);
@@ -397,13 +399,68 @@ textarea {
   gap: 10px;
 }
 
+.jve-pane-layout-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jve-pane-layout-controls select {
+  min-width: 150px;
+}
+
 .jve-tile-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
   min-height: 0;
   gap: 1px;
   background: var(--line);
+}
+
+.jve-pane-surface[data-layout-preset="single"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "pane-a";
+}
+
+.jve-pane-surface[data-layout-preset="two-stacked"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "pane-a"
+    "pane-b";
+}
+
+.jve-pane-surface[data-layout-preset="two-side-by-side"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "pane-a pane-b";
+}
+
+.jve-pane-surface[data-layout-preset="three-primary-left"] {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "pane-a pane-b"
+    "pane-a pane-c";
+}
+
+.jve-pane-surface[data-layout-preset="three-primary-right"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "pane-b pane-a"
+    "pane-c pane-a";
+}
+
+.jve-pane-surface[data-layout-preset="four-grid"],
+.jve-pane-surface:not([data-layout-preset]) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "pane-a pane-b"
+    "pane-c pane-d";
 }
 
 .jve-tile {
@@ -415,9 +472,25 @@ textarea {
 }
 
 .jve-tile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 7px;
   border-bottom: 1px solid rgba(143, 213, 255, 0.16);
   background: var(--panel-strong);
+}
+
+.jve-tile-toolbar select {
+  min-width: 0;
+}
+
+.jve-pane-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
 }
 
 .jve-tile-body {
@@ -437,16 +510,59 @@ textarea {
 }
 
 .jve-tile-canvas,
-.jve-skykit-tile {
+.jve-preview-tile,
+.jve-skykit-tile,
+.jve-free-roam-tile {
   display: block;
   width: 100%;
   height: 100%;
 }
 
-.jve-skykit-tile canvas {
+.jve-preview-tile canvas,
+.jve-skykit-tile canvas,
+.jve-free-roam-tile canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.jve-free-roam-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.jve-free-roam-overlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.jve-free-roam-overlay > * {
+  pointer-events: auto;
+}
+
+.jve-free-roam-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.jve-free-roam-status {
+  min-width: 0;
+  max-width: min(100%, 520px);
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .jve-bottom-panel {

@@ -36,6 +36,19 @@ export function pointPcToRenderUnits(pointPc, world) {
 }
 
 /**
+ * @param {{ x?: unknown; y?: unknown; z?: unknown } | null | undefined} point
+ * @param {{ coordinateUnitsPerParsec: number }} world
+ */
+export function renderUnitsToPointPc(point, world) {
+  const scale = positiveNumber(world.coordinateUnitsPerParsec, DEFAULT_JOURNEY_VIDEO_COORDINATE_UNITS_PER_PARSEC);
+  return {
+    x: finiteNumber(point?.x, 0) / scale,
+    y: finiteNumber(point?.y, 0) / scale,
+    z: finiteNumber(point?.z, 0) / scale,
+  };
+}
+
+/**
  * @param {unknown} valuePc
  * @param {{ coordinateUnitsPerParsec: number }} world
  */

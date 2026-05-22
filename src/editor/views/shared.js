@@ -180,7 +180,8 @@ export function tileLabel(mode) {
   if (mode === 'xz') return 'XZ';
   if (mode === 'yz') return 'YZ';
   if (mode === 'perspective') return 'Perspective';
-  if (mode === 'skykit') return 'SkyKit';
+  if (mode === 'preview' || mode === 'skykit') return 'Preview';
+  if (mode === 'free-roam') return 'Free Roam';
   return mode;
 }
 
@@ -200,10 +201,10 @@ export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number.isFinite(Number(value)) ? Number(value) : min));
 }
 
-export function syncCanvas(canvas) {
-  const pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2);
-  const width = Math.max(1, canvas.clientWidth || 1);
-  const height = Math.max(1, canvas.clientHeight || 1);
+export function syncCanvas(canvas, size = {}) {
+  const pixelRatio = Math.min(Number(size.devicePixelRatio ?? globalThis.devicePixelRatio) || 1, 2);
+  const width = Math.max(1, Number(size.width ?? canvas.clientWidth) || 1);
+  const height = Math.max(1, Number(size.height ?? canvas.clientHeight) || 1);
   const backingWidth = Math.max(1, Math.floor(width * pixelRatio));
   const backingHeight = Math.max(1, Math.floor(height * pixelRatio));
   if (canvas.width !== backingWidth || canvas.height !== backingHeight) {

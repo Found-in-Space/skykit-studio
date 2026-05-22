@@ -60,8 +60,8 @@ export function createPerspectiveView() {
       snapshot = nextSnapshot;
       renderSnapshot();
     },
-    resize() {
-      renderSnapshot();
+    resize(size) {
+      renderSnapshot(size);
     },
     dispose() {
       disposeObjectChildren(root);
@@ -82,9 +82,10 @@ export function createPerspectiveView() {
     },
   };
 
-  function renderSnapshot() {
+  function renderSnapshot(size) {
     if (!canvas || !renderer || !controls || !snapshot) return;
-    const { width, height } = syncCanvas(canvas);
+    const { width, height, pixelRatio } = syncCanvas(canvas, size);
+    renderer.setPixelRatio(pixelRatio);
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();

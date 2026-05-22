@@ -9,9 +9,9 @@ Standalone alpha editor and deterministic export tooling for authored
 `fis-journey-v1` video journeys.
 
 This package now owns the browser editor surface that used to live inside the
-website. It is editor-first: JSON import/export, projection tiles, a perspective
-preview, a SkyKit streamed-stars preview, guide editing, timeline editing, and
-retiming/ease controls.
+website. It is editor-first: JSON import/export, flexible projection/preview
+pane layouts, a perspective preview, a SkyKit streamed-stars preview, free-roam
+guide scouting, guide editing, timeline editing, and retiming/ease controls.
 
 It also owns the viable render path: deterministic browser rendering,
 JavaScript canvas capture, cached transparent overlay blocks, post-capture

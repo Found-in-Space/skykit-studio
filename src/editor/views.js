@@ -14,8 +14,8 @@ import {
 } from './views/controls.js';
 import { createPerspectiveView } from './views/perspective-view.js';
 import { createProjectionView } from './views/projection-view.js';
+import { createFreeRoamView } from './views/free-roam-view.js';
 import { createSkykitView } from './views/skykit-view.js';
-import { createTileSlotView } from './views/tile.js';
 import { createJourneyVideoWorld } from '../world.js';
 
 /**
@@ -60,8 +60,8 @@ export function createJourneyVideoEditorView(mode, options = {}) {
   if (mode === 'scale') return createScaleView();
   if (mode === 'transport') return createTransportView();
   if (mode === 'timeline') return createTimelineView();
-  if (mode === 'tile') return createTileSlotView(Number(options.index ?? 0), createJourneyVideoEditorView);
   if (mode === 'perspective') return createPerspectiveView();
-  if (mode === 'skykit') return createSkykitView();
+  if (mode === 'preview' || mode === 'skykit') return createSkykitView();
+  if (mode === 'free-roam') return createFreeRoamView();
   return createProjectionView(mode);
 }

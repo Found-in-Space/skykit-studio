@@ -23,14 +23,29 @@ import {
   createCameraWaypointMarkers,
   patchCameraWaypoint,
 } from './editor/camera-waypoints.js';
+import { createJourneyVideoGuideDraft } from './editor/guides.js';
+import {
+  addEditorPane,
+  moveEditorPane,
+  removeEditorPane,
+  resolveJourneyVideoPaneLayout,
+  restoreEditorPaneLayout,
+  setEditorExpandedTileIndex,
+  setEditorPaneLayout,
+  setEditorPaneMode,
+  setEditorTileMode,
+} from './editor/panes.js';
 import { createJourneyVideoEditorView } from './editor/views.js';
+import {
+  renderPaneLayoutToolbar,
+  renderPaneToolbar,
+} from './editor/views/tile.js';
 import {
   computeJourneyBounds,
 } from './editor/projection.js';
 
 const SAMPLE_STEP_SECS = 0.5;
 const TIMELINE_STEP_SECS = 0.05;
-const TILE_MODES = ['xy', 'xz', 'yz', 'perspective', 'skykit'];
 /**
  * @param {import('./editor.d.ts').CreateJourneyVideoEditorOptions} [options]
  * @returns {import('./editor.d.ts').JourneyVideoEditor}
@@ -66,6 +81,31 @@ export function createJourneyVideoEditor(options = {}) {
       model.setTileMode(index, mode);
       mount?.renderAll();
     },
+    setExpandedTileIndex(index) {
+      model.setExpandedTileIndex(index);
+      mount?.renderAll();
+    },
+    addPane(mode) {
+      const paneId = model.addPane(mode);
+      mount?.renderAll();
+      return paneId;
+    },
+    removePane(paneId) {
+      model.removePane(paneId);
+      mount?.renderAll();
+    },
+    setPaneMode(paneId, mode) {
+      model.setPaneMode(paneId, mode);
+      mount?.renderAll();
+    },
+    setPaneLayout(preset, paneIds) {
+      model.setPaneLayout(preset, paneIds);
+      mount?.renderAll();
+    },
+    movePane(paneId, direction) {
+      model.movePane(paneId, direction);
+      mount?.renderAll();
+    },
     setUnitsPerParsec(unitsPerParsec) {
       model.setUnitsPerParsec(unitsPerParsec);
       mount?.renderAll();
@@ -78,8 +118,11 @@ export function createJourneyVideoEditor(options = {}) {
       return model.getSnapshot();
     },
     async dispose() {
-      model.dispose();
-      await mount?.dispose();
+      try {
+        await mount?.dispose();
+      } finally {
+        model.dispose();
+      }
     },
   };
 }
@@ -171,8 +214,49 @@ function createEditorModel(options) {
     },
     setTileMode(index, mode) {
       assertActive();
-      if (!TILE_MODES.includes(mode)) return;
-      state.tileModes[Math.max(0, Math.min(3, Number(index) || 0))] = mode;
+      state = setEditorTileMode(state, index, mode);
+      persist();
+    },
+    setExpandedTileIndex(index) {
+      assertActive();
+      state = setEditorExpandedTileIndex(state, index);
+      persist();
+    },
+    addPane(mode) {
+      assertActive();
+      const result = addEditorPane(state, mode);
+      state = result.state;
+      if (result.paneId !== null) persist();
+      return result.paneId;
+    },
+    removePane(paneId) {
+      assertActive();
+      state = removeEditorPane(state, paneId);
+      persist();
+    },
+    setPaneMode(paneId, mode) {
+      assertActive();
+      state = setEditorPaneMode(state, paneId, mode);
+      persist();
+    },
+    setPaneLayout(preset, paneIds) {
+      assertActive();
+      state = setEditorPaneLayout(state, preset, paneIds);
+      persist();
+    },
+    restorePaneLayout() {
+      assertActive();
+      state = restoreEditorPaneLayout(state);
+      persist();
+    },
+    movePane(paneId, direction) {
+      assertActive();
+      state = moveEditorPane(state, paneId, direction);
+      persist();
+    },
+    setFreeRoamPose(pose) {
+      assertActive();
+      state.freeRoamPose = normalizeFreeRoamPose(pose);
       persist();
     },
     setDuration(durationSecs) {
@@ -257,20 +341,10 @@ function createEditorModel(options) {
       rebuild();
     },
     addGuide() {
-      const frame = evaluated;
-      const guide = {
-        id: nextId(journey.guides, 'guide'),
-        label: `Guide ${journey.guides.length + 1}`,
-        shape: 'sphere',
-        positionPc: { ...frame.observerPc },
-        radiusPc: 5,
-        sizePc: 5,
-        color: '#8fd5ff',
-        opacity: 0.45,
-      };
-      journey = { ...journey, guides: [...journey.guides, guide] };
-      state.selectedWidget = { type: 'guide', id: guide.id };
-      rebuild();
+      addGuideAt(evaluated.observerPc);
+    },
+    addGuideAt(pointPc, options = {}) {
+      addGuideAt(pointPc, options);
     },
     deleteSelected() {
       const selected = state.selectedWidget;
@@ -350,6 +424,10 @@ function createEditorModel(options) {
         timeSecs: state.timeSecs,
         playing: state.playing,
         tileModes: [...state.tileModes],
+        panes: state.panes.map((pane) => ({ ...pane })),
+        paneLayout: clonePaneLayout(state.paneLayout),
+        expandedTileIndex: state.expandedTileIndex,
+        freeRoamPose: state.freeRoamPose ? cloneFreeRoamPose(state.freeRoamPose) : null,
         selectedWidget: state.selectedWidget ? { ...state.selectedWidget } : null,
         selectedLocationRange: state.selectedLocationRange ? { ...state.selectedLocationRange } : null,
         selectedLocationGroupId: state.selectedLocationGroupId,
@@ -402,6 +480,14 @@ function createEditorModel(options) {
     rebuild();
   }
 
+  function addGuideAt(pointPc, options = {}) {
+    const guide = createJourneyVideoGuideDraft(journey.guides, pointPc, options);
+    journey = { ...journey, guides: [...journey.guides, guide] };
+    state.selectedWidget = { type: 'guide', id: guide.id };
+    state.selectedLocationRange = null;
+    rebuild();
+  }
+
   function deleteWidget(type, id) {
     if (type === 'location') {
       journey = { ...journey, locationWaypoints: journey.locationWaypoints.filter((entry) => entry.id !== id) };
@@ -430,11 +516,14 @@ function createEditorModel(options) {
 function mountEditor(host, model, options) {
   const doc = host.ownerDocument ?? globalThis.document;
   if (!doc) return null;
+  const win = doc.defaultView ?? globalThis;
   host.classList.add('fis-journey-video-editor-host');
   host.innerHTML = editorMarkup();
   const refs = queryRefs(host);
   /** @type {Map<string, unknown>} */
   const viewStates = new Map();
+  /** @type {Map<string, { paneId: string; shell: HTMLElement; toolbar: HTMLElement; body: HTMLElement; view: unknown; mode: string | null }>} */
+  const paneStates = new Map();
   const viewContextBase = {
     doc,
     preview: options.preview ?? {},
@@ -453,6 +542,12 @@ function mountEditor(host, model, options) {
   let lastTick = performance.now();
   let statusMessage = '';
   let rendering = false;
+  let resizeRaf = null;
+  const resizeUsesAnimationFrame = typeof win.requestAnimationFrame === 'function';
+  const resizeObserver = createResizeObserver();
+  for (const slot of refs.viewSlots) resizeObserver?.observe?.(slot.body);
+  if (refs.paneSurface) resizeObserver?.observe?.(refs.paneSurface);
+  win.addEventListener?.('resize', scheduleResizeAll);
 
   renderAll();
 
@@ -461,7 +556,11 @@ function mountEditor(host, model, options) {
     startLoop,
     async dispose() {
       if (raf != null) cancelAnimationFrame(raf);
+      cancelScheduledResize();
+      win.removeEventListener?.('resize', scheduleResizeAll);
+      resizeObserver?.disconnect?.();
       for (const state of viewStates.values()) await state?.dispose?.();
+      for (const state of paneStates.values()) await disposePaneState(state);
       host.replaceChildren();
       host.classList.remove('fis-journey-video-editor-host');
     },
@@ -479,25 +578,152 @@ function mountEditor(host, model, options) {
         statusMessage,
         hasStorage: Boolean(options.storage),
       });
-      for (const slot of refs.viewSlots) {
-        let view = viewStates.get(slot.key);
-        if (!view || view.mode !== slot.mode) {
-          disposeView(view);
-          slot.body.replaceChildren();
-          view = createJourneyVideoEditorView(slot.mode, { index: slot.index });
-          viewStates.set(slot.key, view);
-          mountView(view, slot.body);
-        }
-        view.update?.(snapshot);
-      }
+      renderStaticViews(snapshot);
+      renderPaneControls(snapshot);
+      renderPaneViews(snapshot);
+      scheduleResizeAll();
     } finally {
       rendering = false;
     }
   }
 
+  function renderStaticViews(snapshot) {
+    for (const slot of refs.viewSlots) {
+      let view = viewStates.get(slot.key);
+      if (!view || view.mode !== slot.mode) {
+        disposeView(view);
+        slot.body.replaceChildren();
+        view = createJourneyVideoEditorView(slot.mode, { index: slot.index });
+        viewStates.set(slot.key, view);
+        mountView(view, slot.body);
+      }
+      view.update?.(snapshot);
+    }
+  }
+
+  function renderPaneControls(snapshot) {
+    if (!refs.paneLayoutToolbar) return;
+    renderPaneLayoutToolbar({
+      doc,
+      body: refs.paneLayoutToolbar,
+      snapshot,
+      dispatch: viewContextBase.dispatch,
+    });
+  }
+
+  function renderPaneViews(snapshot) {
+    if (!refs.paneSurface) return;
+    const layout = resolveJourneyVideoPaneLayout(snapshot.editorState);
+    refs.paneSurface.dataset.layoutPreset = String(layout.preset);
+    const activePaneIds = new Set();
+    for (const slot of layout.slots) {
+      const pane = slot.pane;
+      if (!pane) continue;
+      activePaneIds.add(pane.id);
+      let paneState = paneStates.get(pane.id);
+      if (!paneState) {
+        paneState = createPaneState(pane.id);
+        paneStates.set(pane.id, paneState);
+      }
+      paneState.shell.dataset.paneId = pane.id;
+      paneState.shell.dataset.paneArea = slot.area;
+      paneState.shell.style.gridArea = slot.area;
+      refs.paneSurface.append(paneState.shell);
+      renderPaneToolbar({
+        doc,
+        toolbar: paneState.toolbar,
+        pane,
+        layout,
+        paneCount: snapshot.editorState.panes?.length ?? 0,
+        dispatch: viewContextBase.dispatch,
+      });
+      if (paneState.mode !== pane.mode) {
+        disposeView(paneState.view);
+        paneState.body.replaceChildren();
+        paneState.view = createJourneyVideoEditorView(pane.mode);
+        paneState.mode = pane.mode;
+        mountView(paneState.view, paneState.body);
+      }
+      paneState.view?.update?.(snapshot);
+    }
+    for (const [paneId, paneState] of paneStates) {
+      if (activePaneIds.has(paneId)) continue;
+      void disposePaneState(paneState);
+      paneStates.delete(paneId);
+    }
+  }
+
+  function createPaneState(paneId) {
+    const shell = doc.createElement('article');
+    shell.className = 'jve-pane jve-tile';
+    const toolbar = doc.createElement('div');
+    toolbar.className = 'jve-pane-toolbar jve-tile-toolbar';
+    const body = doc.createElement('div');
+    body.className = 'jve-pane-body jve-tile-body';
+    shell.append(toolbar, body);
+    resizeObserver?.observe?.(body);
+    return { paneId, shell, toolbar, body, view: null, mode: null };
+  }
+
   function mountView(view, body) {
     try {
       Promise.resolve(view.mount({ ...viewContextBase, body })).catch(reportError);
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  async function disposePaneState(paneState) {
+    resizeObserver?.unobserve?.(paneState.body);
+    disposeView(paneState.view);
+    paneState.shell.remove();
+    paneState.view = null;
+    paneState.mode = null;
+  }
+
+  function createResizeObserver() {
+    const ResizeObserverCtor = win.ResizeObserver ?? globalThis.ResizeObserver;
+    return typeof ResizeObserverCtor === 'function'
+      ? new ResizeObserverCtor(scheduleResizeAll)
+      : null;
+  }
+
+  function scheduleResizeAll() {
+    if (resizeRaf != null) return;
+    const run = () => {
+      resizeRaf = null;
+      resizeAllViews();
+    };
+    resizeRaf = resizeUsesAnimationFrame
+      ? win.requestAnimationFrame(run)
+      : setTimeout(run, 0);
+  }
+
+  function cancelScheduledResize() {
+    if (resizeRaf == null) return;
+    if (resizeUsesAnimationFrame) win.cancelAnimationFrame?.(resizeRaf);
+    else clearTimeout(resizeRaf);
+    resizeRaf = null;
+  }
+
+  function resizeAllViews() {
+    for (const slot of refs.viewSlots) {
+      resizeView(viewStates.get(slot.key), slot.body);
+    }
+    for (const paneState of paneStates.values()) {
+      resizeView(paneState.view, paneState.body);
+    }
+  }
+
+  function resizeView(view, body) {
+    if (!view?.resize || !body) return;
+    try {
+      const rect = body.getBoundingClientRect?.();
+      view.resize({
+        width: Math.max(1, Number(rect?.width ?? body.clientWidth ?? 1) || 1),
+        height: Math.max(1, Number(rect?.height ?? body.clientHeight ?? 1) || 1),
+        devicePixelRatio: Math.min(Number(win.devicePixelRatio ?? globalThis.devicePixelRatio ?? 1) || 1, 2),
+      });
     } catch (error) {
       reportError(error);
     }
@@ -533,6 +759,38 @@ function mountEditor(host, model, options) {
       model.setTileMode(Number(action.index), String(action.mode));
       return true;
     }
+    if (action.type === 'setExpandedTileIndex') {
+      model.setExpandedTileIndex(action.index === null ? null : Number(action.index));
+      return true;
+    }
+    if (action.type === 'addPane') {
+      model.addPane(action.mode);
+      return true;
+    }
+    if (action.type === 'removePane') {
+      model.removePane(String(action.paneId ?? ''));
+      return true;
+    }
+    if (action.type === 'setPaneMode') {
+      model.setPaneMode(String(action.paneId ?? ''), String(action.mode ?? ''));
+      return true;
+    }
+    if (action.type === 'setPaneLayout') {
+      model.setPaneLayout(String(action.preset ?? ''), Array.isArray(action.paneIds) ? action.paneIds : undefined);
+      return true;
+    }
+    if (action.type === 'restorePaneLayout') {
+      model.restorePaneLayout();
+      return true;
+    }
+    if (action.type === 'movePane') {
+      model.movePane(String(action.paneId ?? ''), String(action.direction ?? ''));
+      return true;
+    }
+    if (action.type === 'setFreeRoamPose') {
+      model.setFreeRoamPose(action.pose);
+      return false;
+    }
     if (action.type === 'setDuration') {
       model.setDuration(Number(action.durationSecs));
       return true;
@@ -561,6 +819,13 @@ function mountEditor(host, model, options) {
       if (action.widgetType === 'location') model.addLocation();
       if (action.widgetType === 'camera') model.addCamera();
       if (action.widgetType === 'guide') model.addGuide();
+      return true;
+    }
+    if (action.type === 'addGuideAt') {
+      if (!action.pointPc || typeof action.pointPc !== 'object') return false;
+      model.addGuideAt(action.pointPc, {
+        ...(typeof action.label === 'string' ? { label: action.label } : {}),
+      });
       return true;
     }
     if (action.type === 'deleteWidget') {
@@ -661,12 +926,11 @@ function editorMarkup() {
         <section class="jve-status" data-view-slot="status"></section>
       </aside>
       <main class="jve-main">
-        <div class="jve-view-toolbar" data-view-slot="scale"></div>
-        <section class="jve-tile-grid">
-          ${[0, 1, 2, 3].map((index) => `
-            <div class="jve-tile" data-view-slot="tile" data-view-index="${index}"></div>
-          `).join('')}
-        </section>
+        <div class="jve-view-toolbar">
+          <div data-view-slot="scale"></div>
+          <div data-pane-layout-toolbar></div>
+        </div>
+        <section class="jve-pane-surface jve-tile-grid" data-pane-surface></section>
         <section class="jve-bottom-panel">
           <div class="jve-transport" data-view-slot="transport"></div>
           <div class="jve-timeline" data-view-slot="timeline"></div>
@@ -687,6 +951,8 @@ function normalizeEditorBrand(brand = {}) {
 /** @param {Element} host */
 function queryRefs(host) {
   return {
+    paneSurface: host.querySelector('[data-pane-surface]'),
+    paneLayoutToolbar: host.querySelector('[data-pane-layout-toolbar]'),
     viewSlots: [...host.querySelectorAll('[data-view-slot]')].map((body, index) => ({
       body,
       key: `${body.getAttribute('data-view-slot')}:${body.getAttribute('data-view-index') ?? index}`,
@@ -699,9 +965,10 @@ function queryRefs(host) {
 function createEditorViewSnapshot(journey, state, evaluator, evaluated, samples, world, ui = {}) {
   const snapshotJourney = normalizeTimedJourney(journey);
   const snapshotSamples = samples.map(cloneFrame);
+  const editorState = normalizeJourneyVideoEditorState(state);
   return deepFreeze({
     journey: snapshotJourney,
-    editorState: normalizeJourneyVideoEditorState(state),
+    editorState,
     evaluated: cloneFrame(evaluated),
     samples: snapshotSamples,
     cameraMarkers: createCameraWaypointMarkers(snapshotJourney, evaluator),
@@ -745,6 +1012,29 @@ function cloneQuaternion(quaternion) {
     z: Number(quaternion?.z ?? 0),
     w: Number(quaternion?.w ?? 1),
   };
+}
+
+function cloneFreeRoamPose(pose) {
+  return {
+    observerPc: clonePoint(pose?.observerPc),
+    orientationIcrs: cloneQuaternion(pose?.orientationIcrs),
+  };
+}
+
+function clonePaneLayout(layout) {
+  return {
+    preset: String(layout?.preset ?? 'four-grid'),
+    paneIds: Array.isArray(layout?.paneIds) ? [...layout.paneIds] : [],
+    primaryPaneId: typeof layout?.primaryPaneId === 'string' ? layout.primaryPaneId : null,
+    previousLayout: layout?.previousLayout ? clonePaneLayout(layout.previousLayout) : null,
+  };
+}
+
+function normalizeFreeRoamPose(pose) {
+  if (!pose || typeof pose !== 'object') return null;
+  const source = /** @type {Record<string, unknown>} */ (pose);
+  if (!source.observerPc || typeof source.observerPc !== 'object') return null;
+  return cloneFreeRoamPose(source);
 }
 
 function deepFreeze(value, seen = new WeakSet()) {

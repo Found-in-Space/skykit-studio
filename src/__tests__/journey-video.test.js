@@ -46,6 +46,24 @@ import {
   cameraWaypointStyle,
   patchCameraWaypoint,
 } from '../editor/camera-waypoints.js';
+import {
+  DEFAULT_JOURNEY_VIDEO_GUIDE_RADIUS_PC,
+  createJourneyVideoGuideDraft,
+} from '../editor/guides.js';
+import {
+  createJourneyVideoWorld,
+  pointPcToRenderUnits,
+  renderUnitsToPointPc,
+} from '../world.js';
+import {
+  addEditorPane,
+  moveEditorPane,
+  removeEditorPane,
+  resolveJourneyVideoPaneLayout,
+  restoreEditorPaneLayout,
+  setEditorExpandedTileIndex,
+  setEditorPaneLayout,
+} from '../editor/panes.js';
 
 const SAMPLE_JOURNEY = {
   format: 'fis-journey-v1',
@@ -77,8 +95,13 @@ test('skykit-studio package exposes alpha editor status', () => {
 
 test('editor state normalization preserves safe tile, scale, selection, and draft defaults', () => {
   const state = normalizeJourneyVideoEditorState({
-    tileModes: ['yz', 'skykit', 'bad-mode'],
+    tileModes: ['yz', 'free-roam', 'bad-mode', 'skykit'],
     unitsPerParsec: 200,
+    expandedTileIndex: 2,
+    freeRoamPose: {
+      observerPc: { x: 1, y: 2, z: 3 },
+      orientationIcrs: { x: 0, y: 0.2, z: 0, w: 0.98 },
+    },
     selectedWidget: { type: 'guide', id: 'guide-a' },
     selectedLocationRange: { anchorId: 'loc-a', focusId: 'loc-b' },
     easeSecs: 4.5,
@@ -86,8 +109,14 @@ test('editor state normalization preserves safe tile, scale, selection, and draf
     playing: true,
   });
 
-  assert.deepEqual(state.tileModes, ['yz', 'skykit', 'perspective', 'skykit']);
+  assert.deepEqual(state.tileModes, ['yz', 'free-roam', 'perspective', 'preview']);
+  assert.deepEqual(state.panes.map((pane) => pane.mode), ['yz', 'free-roam', 'perspective', 'preview']);
   assert.equal(state.unitsPerParsec, 80);
+  assert.equal(state.paneLayout.preset, 'single');
+  assert.deepEqual(state.paneLayout.paneIds, ['pane-3']);
+  assert.equal(state.expandedTileIndex, 2);
+  assert.deepEqual(state.freeRoamPose?.observerPc, { x: 1, y: 2, z: 3 });
+  assert.deepEqual(state.freeRoamPose?.orientationIcrs, { x: 0, y: 0.2, z: 0, w: 0.98 });
   assert.deepEqual(state.selectedWidget, { type: 'guide', id: 'guide-a' });
   assert.deepEqual(state.selectedLocationRange, { anchorId: 'loc-a', focusId: 'loc-b' });
   assert.equal(state.easeSecs, 4.5);
@@ -95,6 +124,60 @@ test('editor state normalization preserves safe tile, scale, selection, and draf
   assert.equal(state.playing, true);
   assert.equal(normalizeJourneyVideoEditorState({ zoom: 25 }).unitsPerParsec, DEFAULT_EDITOR_UNITS_PER_PARSEC);
   assert.equal(normalizeJourneyVideoEditorState({ easeSecs: -10 }).easeSecs, 0.05);
+  assert.equal(normalizeJourneyVideoEditorState({ expandedTileIndex: 4 }).expandedTileIndex, null);
+  assert.equal(normalizeJourneyVideoEditorState({ freeRoamPose: {} }).freeRoamPose, null);
+});
+
+test('pane layout helpers normalize legacy input and manage dynamic pane state', () => {
+  const legacy = normalizeJourneyVideoEditorState({
+    tileModes: ['xy', 'skykit', 'bad-mode'],
+    expandedTileIndex: 1,
+  });
+  assert.deepEqual(legacy.tileModes, ['xy', 'preview', 'perspective', 'preview']);
+  assert.equal(legacy.paneLayout.preset, 'single');
+  assert.deepEqual(legacy.paneLayout.paneIds, ['pane-2']);
+  assert.equal(legacy.paneLayout.previousLayout?.preset, 'four-grid');
+
+  let state = normalizeJourneyVideoEditorState({
+    panes: [
+      { id: 'main', mode: 'preview' },
+      { id: 'side', mode: 'free-roam' },
+      { id: 'guide', mode: 'yz' },
+    ],
+    paneLayout: {
+      preset: 'three-primary-right',
+      paneIds: ['main', 'missing', 'side', 'guide'],
+      primaryPaneId: 'main',
+    },
+  });
+  let layout = resolveJourneyVideoPaneLayout(state);
+  assert.equal(layout.preset, 'three-primary-right');
+  assert.deepEqual(layout.slots.map((slot) => [slot.pane.id, slot.area]), [
+    ['main', 'pane-a'],
+    ['side', 'pane-b'],
+    ['guide', 'pane-c'],
+  ]);
+
+  state = setEditorPaneLayout(state, 'single', ['side']);
+  assert.equal(state.paneLayout.preset, 'single');
+  assert.equal(state.expandedTileIndex, 1);
+  state = restoreEditorPaneLayout(state);
+  assert.equal(state.paneLayout.preset, 'three-primary-right');
+
+  const added = addEditorPane(state, 'xz');
+  state = added.state;
+  assert.equal(added.paneId, 'pane-1');
+  assert.equal(state.panes.length, 4);
+  assert.equal(state.panes.at(-1)?.mode, 'xz');
+
+  state = moveEditorPane(state, added.paneId, 'previous');
+  assert.equal(state.panes[2].id, added.paneId);
+  state = removeEditorPane(state, 'side');
+  assert.equal(state.panes.some((pane) => pane.id === 'side'), false);
+  assert.equal(resolveJourneyVideoPaneLayout(state).slots.length, 3);
+
+  state = setEditorExpandedTileIndex(state, null);
+  assert.notEqual(state.paneLayout.preset, 'single');
 });
 
 test('editor documents import and export fis journey data without website fields', () => {
@@ -189,6 +272,35 @@ test('projection views share explicit units per parsec', () => {
   assert.ok(Math.abs(roundTrip.x - guide.positionPc.x) < 1e-9);
   assert.ok(Math.abs(roundTrip.y - guide.positionPc.y) < 1e-9);
   assert.ok(Math.abs(roundTrip.z - guide.positionPc.z) < 1e-9);
+});
+
+test('world conversion round-trips free-roam star picks from render units to parsecs', () => {
+  const world = createJourneyVideoWorld({ coordinateUnitsPerParsec: 0.02 });
+  const pointPc = { x: -42, y: 20, z: -125 };
+  const renderUnits = pointPcToRenderUnits(pointPc, world);
+  const roundTrip = renderUnitsToPointPc(renderUnits, world);
+
+  assert.deepEqual(renderUnits, { x: -0.84, y: 0.4, z: -2.5 });
+  assert.ok(Math.abs(roundTrip.x - pointPc.x) < 1e-9);
+  assert.ok(Math.abs(roundTrip.y - pointPc.y) < 1e-9);
+  assert.ok(Math.abs(roundTrip.z - pointPc.z) < 1e-9);
+});
+
+test('guide drafts default to 1 pc spheres with stable labels', () => {
+  const guide = createJourneyVideoGuideDraft(SAMPLE_JOURNEY.guides, { x: 1.25, y: -2, z: 3.5 });
+  const picked = createJourneyVideoGuideDraft([...SAMPLE_JOURNEY.guides, guide], { x: 4, y: 5, z: 6 }, {
+    label: 'Picked star',
+  });
+
+  assert.equal(guide.id, 'guide-2');
+  assert.equal(guide.label, 'Guide 2');
+  assert.equal(guide.shape, 'sphere');
+  assert.equal(guide.radiusPc, DEFAULT_JOURNEY_VIDEO_GUIDE_RADIUS_PC);
+  assert.equal(guide.sizePc, DEFAULT_JOURNEY_VIDEO_GUIDE_RADIUS_PC);
+  assert.deepEqual(guide.positionPc, { x: 1.25, y: -2, z: 3.5 });
+  assert.equal(picked.id, 'guide-3');
+  assert.equal(picked.label, 'Picked star');
+  assert.equal(picked.radiusPc, 1);
 });
 
 test('camera waypoint markers derive stable positions for target, direction, and quaternion keys', () => {
@@ -333,18 +445,28 @@ test('headless editor handle updates snapshots, evaluates frames, and disposes c
   editor.setTime(4.97);
   assert.equal(editor.getSnapshot().timeSecs, 4.95);
   assert.ok(editor.evaluateAt(5).observerPc.x > 4);
-  editor.setTileMode(1, 'skykit');
+  editor.setTileMode(1, 'preview');
+  editor.setExpandedTileIndex(1);
+  const addedPaneId = editor.addPane('free-roam');
+  assert.equal(addedPaneId, null);
+  editor.setPaneLayout('two-side-by-side');
   editor.setUnitsPerParsec(6);
   editor.selectWidget('guide', 'guide-a');
 
   const snapshot = editor.getSnapshot();
-  assert.equal(snapshot.tileModes[1], 'skykit');
+  assert.equal(snapshot.tileModes[1], 'preview');
+  assert.equal(snapshot.paneLayout.preset, 'two-side-by-side');
+  assert.equal(snapshot.panes.length, 4);
+  assert.equal(snapshot.expandedTileIndex, null);
   assert.equal(snapshot.selectedWidget?.id, 'guide-a');
-  assert.equal(changes.length, 4);
+  assert.equal(changes.length, 6);
+  editor.setExpandedTileIndex(null);
+  assert.equal(editor.getSnapshot().expandedTileIndex, null);
+  assert.equal(changes.length, 7);
 
   editor.setJourney({ ...SAMPLE_JOURNEY, id: 'next-journey', durationSecs: 6 });
   assert.equal(editor.getJourney().id, 'next-journey');
-  assert.equal(changes.length, 5);
+  assert.equal(changes.length, 8);
 
   await editor.dispose();
   assert.equal(editor.getSnapshot().disposed, true);

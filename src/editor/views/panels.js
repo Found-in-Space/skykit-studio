@@ -285,6 +285,17 @@ function renderGuideWidget(context, snapshot, guide) {
       field(doc, 'Label', textInput(doc, guide.label ?? '', (value) => {
         context.dispatch({ type: 'patchWidget', widgetType: 'guide', id: guide.id, patch: { label: value } });
       })),
+      field(doc, 'Type', selectInput(doc, guide.shape === 'cube' ? 'cube' : 'sphere', [
+        { value: 'sphere', label: 'Sphere' },
+        { value: 'cube', label: 'Cube' },
+      ], (value) => {
+        context.dispatch({
+          type: 'patchWidget',
+          widgetType: 'guide',
+          id: guide.id,
+          patch: { shape: value === 'cube' ? 'cube' : 'sphere' },
+        });
+      })),
       vectorEditor(doc, 'Position', guide.positionPc, (pointPc) => {
         context.dispatch({ type: 'updateWidgetPoint', widgetType: 'guide', id: guide.id, pointPc });
       }),
