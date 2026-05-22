@@ -5,6 +5,14 @@
   "description": "SkyKit-powered authoring studio and deterministic journey video export tooling",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Found-in-Space/skykit-studio.git"
+  },
+  "homepage": "https://github.com/Found-in-Space/skykit-studio#readme",
+  "bugs": {
+    "url": "https://github.com/Found-in-Space/skykit-studio/issues"
+  },
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "exports": {
@@ -36,6 +44,7 @@
     "examples",
     "index.html",
     "README.md",
+    "LICENSE",
     "TODO.md"
   ],
   "sideEffects": false,

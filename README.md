@@ -1,5 +1,10 @@
 # @found-in-space/skykit-studio
 
+Part of [Found in Space](https://foundin.space/), a project that turns real
+astronomical measurements into interactive explorations of the solar
+neighbourhood. See all repositories at
+[github.com/Found-in-Space](https://github.com/Found-in-Space).
+
 Standalone alpha editor and deterministic export tooling for authored
 `fis-journey-v1` video journeys.
 
@@ -81,3 +86,7 @@ import { runJourneyVideoExport } from '@found-in-space/skykit-studio/export/node
   overlay block assets, ffmpeg argument construction, and export metadata.
 
 No website Astro code or old SkyKit runtime code is imported here.
+
+## License
+
+MIT. Copyright (c) 2026 Kaj Wik Siebert.
