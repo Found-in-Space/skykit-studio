@@ -1,4 +1,4 @@
-# @found-in-space/journey-video
+# @found-in-space/skykit-studio
 
 Standalone alpha editor and deterministic export tooling for authored
 `fis-journey-v1` video journeys.
@@ -15,7 +15,7 @@ MediaRecorder capture, and benchmark experiments are intentionally not part of
 this package.
 
 ```js
-import { createJourneyVideoEditor } from '@found-in-space/journey-video/editor';
+import { createJourneyVideoEditor } from '@found-in-space/skykit-studio/editor';
 
 const editor = createJourneyVideoEditor({
   host: document.querySelector('#editor'),
@@ -35,7 +35,7 @@ Vite serves the editor at `/` and keeps the original package example at
 
 ## Deterministic Export
 
-The export runner is Node-only and lives behind `@found-in-space/journey-video/export/node`.
+The export runner is Node-only and lives behind `@found-in-space/skykit-studio/export/node`.
 It starts the package render page unless you provide `--page-url`, captures sky
 frames from the browser canvas, renders each active text block once as a
 transparent PNG, and lets `ffmpeg` do the compositing.
@@ -45,7 +45,7 @@ npm run video:install-browsers
 
 npm run video:journey:test
 
-journey-video-render \
+skykit-studio-render \
   --mode=preview \
   --layout=landscape-1080p \
   --journey=examples/radio-bubble/radio-bubble-journey.json
@@ -65,9 +65,9 @@ Export helper imports:
 import {
   createJourneyVideoOverlayBlocks,
   normalizeJourneyVideoRenderProfile,
-} from '@found-in-space/journey-video/export';
+} from '@found-in-space/skykit-studio/export';
 
-import { runJourneyVideoExport } from '@found-in-space/journey-video/export/node';
+import { runJourneyVideoExport } from '@found-in-space/skykit-studio/export/node';
 ```
 
 ## Package Boundary
@@ -76,7 +76,7 @@ import { runJourneyVideoExport } from '@found-in-space/journey-video/export/node
 - `@found-in-space/journey` owns journey schema, timed evaluation, and retiming
   helpers.
 - `@found-in-space/skykit` owns viewer composition.
-- `@found-in-space/journey-video` owns editor state, DOM layout, tiles,
+- `@found-in-space/skykit-studio` owns editor state, DOM layout, tiles,
   inspector state, import/export, draft storage, deterministic render pages,
   overlay block assets, ffmpeg argument construction, and export metadata.
 

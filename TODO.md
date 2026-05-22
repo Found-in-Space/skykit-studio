@@ -1,4 +1,4 @@
-# Journey Video TODO
+# SkyKit Studio TODO
 
 Implemented in the first alpha editor slice:
 

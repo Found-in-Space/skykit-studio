@@ -1,5 +1,5 @@
-import { createJourneyVideoStorage } from '@found-in-space/journey-video';
-import { createJourneyVideoEditor } from '@found-in-space/journey-video/editor';
+import { createJourneyVideoStorage } from '@found-in-space/skykit-studio';
+import { createJourneyVideoEditor } from '@found-in-space/skykit-studio/editor';
 
 const SAMPLE_JOURNEY = {
   format: 'fis-journey-v1',
@@ -34,11 +34,17 @@ const SAMPLE_JOURNEY = {
 };
 
 const host = document.querySelector('[data-editor]');
+const brandMarkUrl = host instanceof HTMLElement ? host.dataset.brandMarkUrl : '';
 const storage = createJourneyVideoStorage(window.localStorage, 'fis-journey-video-editor-example');
 const saved = storage.load();
 
 const editor = createJourneyVideoEditor({
   host,
+  brand: {
+    eyebrow: 'Found in Space - SkyKit',
+    title: 'SkyKit Studio',
+    markUrl: brandMarkUrl,
+  },
   document: saved ?? undefined,
   journey: saved ? undefined : SAMPLE_JOURNEY,
   storage,

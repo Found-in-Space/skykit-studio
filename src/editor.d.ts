@@ -26,8 +26,15 @@ export interface JourneyVideoEditorPreviewOptions {
   limitingMagnitude?: number;
 }
 
+export interface JourneyVideoEditorBrandOptions {
+  title?: string;
+  eyebrow?: string;
+  markUrl?: string;
+}
+
 export interface CreateJourneyVideoEditorOptions {
   host?: Element | null;
+  brand?: JourneyVideoEditorBrandOptions;
   document?: unknown;
   journey?: unknown;
   editorState?: unknown;

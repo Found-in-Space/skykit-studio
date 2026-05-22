@@ -71,7 +71,7 @@ const SAMPLE_JOURNEY = {
   ],
 };
 
-test('journey-video package exposes alpha editor status', () => {
+test('skykit-studio package exposes alpha editor status', () => {
   assert.equal(JOURNEY_VIDEO_PACKAGE_STATUS, 'alpha-editor');
 });
 

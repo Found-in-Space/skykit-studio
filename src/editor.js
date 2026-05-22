@@ -440,6 +440,7 @@ function mountEditor(host, model, options) {
     preview: options.preview ?? {},
     world: model.world,
     services: {
+      brand: normalizeEditorBrand(options.brand),
       hasStorage: Boolean(options.storage),
     },
     dispatch(action) {
@@ -673,6 +674,14 @@ function editorMarkup() {
       </main>
     </div>
   `;
+}
+
+function normalizeEditorBrand(brand = {}) {
+  return {
+    eyebrow: String(brand.eyebrow ?? ''),
+    markUrl: String(brand.markUrl ?? ''),
+    title: String(brand.title ?? 'SkyKit Studio'),
+  };
 }
 
 /** @param {Element} host */

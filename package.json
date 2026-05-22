@@ -1,8 +1,8 @@
 {
-  "name": "@found-in-space/journey-video",
+  "name": "@found-in-space/skykit-studio",
   "private": true,
   "version": "0.0.0-alpha.0",
-  "description": "Standalone journey video editor and deterministic export tooling",
+  "description": "SkyKit-powered authoring studio and deterministic journey video export tooling",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.js",
@@ -26,10 +26,12 @@
     }
   },
   "bin": {
+    "skykit-studio-render": "./bin/journey-video-render.js",
     "journey-video-render": "./bin/journey-video-render.js"
   },
   "files": [
     "bin",
+    "public",
     "src",
     "examples",
     "index.html",

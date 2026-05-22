@@ -43,11 +43,39 @@ export function createStateSummaryView() {
     mode: 'state-summary',
     mount(nextContext) {
       context = nextContext;
+      const brand = nextContext.services?.brand ?? {};
+      const header = nextContext.doc.createElement('header');
+      header.className = 'jve-brand-header';
+      const markUrl = String(brand.markUrl ?? '');
+      if (markUrl) {
+        header.classList.add('has-mark');
+        const mark = nextContext.doc.createElement('img');
+        mark.className = 'jve-brand-mark';
+        mark.src = markUrl;
+        mark.alt = '';
+        mark.setAttribute('aria-hidden', 'true');
+        mark.addEventListener('error', () => {
+          mark.remove();
+          header.classList.remove('has-mark');
+        }, { once: true });
+        header.append(mark);
+      }
+      const copy = nextContext.doc.createElement('div');
+      copy.className = 'jve-brand-copy';
+      const eyebrowText = String(brand.eyebrow ?? '');
+      if (eyebrowText) {
+        const eyebrow = nextContext.doc.createElement('p');
+        eyebrow.className = 'jve-eyebrow';
+        eyebrow.textContent = eyebrowText;
+        copy.append(eyebrow);
+      }
       const title = nextContext.doc.createElement('h1');
-      title.textContent = 'Journey Video Editor';
+      title.textContent = String(brand.title ?? 'SkyKit Studio');
+      copy.append(title);
+      header.append(copy);
       stats = nextContext.doc.createElement('dl');
       stats.className = 'jve-stats';
-      nextContext.body.replaceChildren(title, stats);
+      nextContext.body.replaceChildren(header, stats);
     },
     update(snapshot) {
       if (!context || !stats) return;

@@ -19,29 +19,29 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: '@found-in-space/journey-video/editor',
+        find: '@found-in-space/skykit-studio/editor',
         replacement: path.resolve(__dirname, 'src/editor.js'),
       },
       {
-        find: '@found-in-space/journey-video/export/node',
+        find: '@found-in-space/skykit-studio/export/node',
         replacement: path.resolve(__dirname, 'src/export-node.js'),
       },
       {
-        find: '@found-in-space/journey-video/export',
+        find: '@found-in-space/skykit-studio/export',
         replacement: path.resolve(__dirname, 'src/export.js'),
       },
       {
-        find: '@found-in-space/journey-video',
+        find: '@found-in-space/skykit-studio',
         replacement: path.resolve(__dirname, 'src/index.js'),
       },
     ],
   },
   optimizeDeps: {
     exclude: [
-      '@found-in-space/journey-video',
-      '@found-in-space/journey-video/editor',
-      '@found-in-space/journey-video/export',
-      '@found-in-space/journey-video/export/node',
+      '@found-in-space/skykit-studio',
+      '@found-in-space/skykit-studio/editor',
+      '@found-in-space/skykit-studio/export',
+      '@found-in-space/skykit-studio/export/node',
       ...localFoundInSpacePackages,
     ],
   },
