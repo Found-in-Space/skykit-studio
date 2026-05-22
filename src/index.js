@@ -3,7 +3,7 @@ import {
   normalizeTimedJourney,
 } from '@found-in-space/journey';
 
-export const JOURNEY_VIDEO_PACKAGE_STATUS = 'alpha-editor';
+export const SKYKIT_STUDIO_PACKAGE_STATUS = 'alpha-editor';
 export const DEFAULT_EDITOR_UNITS_PER_PARSEC = 3;
 
 export const DEFAULT_JOURNEY_VIDEO_EDITOR_STATE = Object.freeze({

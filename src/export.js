@@ -1,6 +1,6 @@
 import { normalizeTimedJourney } from '@found-in-space/journey';
 
-export const JOURNEY_VIDEO_EXPORT_PACKAGE_STATUS = 'alpha-export';
+export const SKYKIT_STUDIO_EXPORT_PACKAGE_STATUS = 'alpha-export';
 
 export const JOURNEY_VIDEO_EXPORT_PLATES = Object.freeze([
   'sky',

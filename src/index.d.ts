@@ -1,6 +1,6 @@
 import type { TimedJourney } from '@found-in-space/journey';
 
-export declare const JOURNEY_VIDEO_PACKAGE_STATUS: 'alpha-editor';
+export declare const SKYKIT_STUDIO_PACKAGE_STATUS: 'alpha-editor';
 export declare const DEFAULT_EDITOR_UNITS_PER_PARSEC: 3;
 export declare const JOURNEY_VIDEO_EDITOR_TILE_MODES: readonly ['xy', 'xz', 'yz', 'perspective', 'skykit'];
 

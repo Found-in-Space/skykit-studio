@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { createJourneyVideoEditor } from '../editor.js';
 import {
   DEFAULT_EDITOR_UNITS_PER_PARSEC,
-  JOURNEY_VIDEO_PACKAGE_STATUS,
+  SKYKIT_STUDIO_PACKAGE_STATUS,
   createJourneyVideoEditorDocument,
   exportJourneyVideoEditorDocument,
   importJourneyVideoEditorDocument,
@@ -72,7 +72,7 @@ const SAMPLE_JOURNEY = {
 };
 
 test('skykit-studio package exposes alpha editor status', () => {
-  assert.equal(JOURNEY_VIDEO_PACKAGE_STATUS, 'alpha-editor');
+  assert.equal(SKYKIT_STUDIO_PACKAGE_STATUS, 'alpha-editor');
 });
 
 test('editor state normalization preserves safe tile, scale, selection, and draft defaults', () => {

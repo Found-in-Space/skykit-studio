@@ -13,7 +13,7 @@ Implemented in the first alpha export slice:
 - JavaScript canvas sky-frame capture;
 - cached full-frame transparent overlay block PNGs;
 - ffmpeg compositing/MP4 encoding arguments;
-- Playwright-backed Node runner and `journey-video-render` bin;
+- Playwright-backed Node runner and `skykit-studio-render` bin;
 - render metadata with profile, layout, timings, artifacts, and readiness stats.
 
 Future work:

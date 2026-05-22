@@ -14,10 +14,10 @@ test('journey video export renders a two-frame package fixture', async () => {
       retainFrames: true,
     },
     journeyPath: fileURLToPath(new URL('../../examples/radio-bubble/radio-bubble-journey.json', import.meta.url)),
-    outputDir: 'video-output/journey-video-integration',
+    outputDir: 'video-output/skykit-studio-integration',
   });
 
   assert.equal(result.metadata.frameCount, 2);
-  assert.match(result.videoPath, /journey-video-landscape-1080p-preview\.mp4$/u);
+  assert.match(result.videoPath, /skykit-studio-landscape-1080p-preview\.mp4$/u);
   assert.equal(Array.isArray(result.metadata.overlayBlocks), true);
 });

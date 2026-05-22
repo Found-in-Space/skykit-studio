@@ -1,4 +1,4 @@
-export declare const JOURNEY_VIDEO_EXPORT_PACKAGE_STATUS: 'alpha-export';
+export declare const SKYKIT_STUDIO_EXPORT_PACKAGE_STATUS: 'alpha-export';
 export declare const JOURNEY_VIDEO_EXPORT_PLATES: readonly ['sky', 'overlay', 'composite'];
 export declare const JOURNEY_VIDEO_BROWSER_IDS: readonly ['webkit', 'chromium', 'firefox'];
 export declare const JOURNEY_VIDEO_LAYOUT_IDS: readonly string[];

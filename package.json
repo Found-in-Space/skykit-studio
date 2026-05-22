@@ -34,8 +34,7 @@
     }
   },
   "bin": {
-    "skykit-studio-render": "./bin/journey-video-render.js",
-    "journey-video-render": "./bin/journey-video-render.js"
+    "skykit-studio-render": "./bin/skykit-studio-render.js"
   },
   "files": [
     "bin",
@@ -54,10 +53,10 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test",
-    "test:integration:export": "JOURNEY_VIDEO_EXPORT_INTEGRATION=1 node --test src/__integration__/journey-video-export.integration.mjs",
+    "test:integration:export": "SKYKIT_STUDIO_EXPORT_INTEGRATION=1 node --test src/__integration__/journey-video-export.integration.mjs",
     "video:install-browsers": "playwright install chromium firefox webkit",
-    "video:journey:test": "node ./bin/journey-video-render.js --mode=preview --layout=landscape-1080p --frames=2 --fps=1 --journey=examples/radio-bubble/radio-bubble-journey.json --output-dir=video-output/journey-video-smoke",
-    "video:journey:preview": "node ./bin/journey-video-render.js --mode=preview --journey=examples/radio-bubble/radio-bubble-journey.json"
+    "video:journey:test": "node ./bin/skykit-studio-render.js --mode=preview --layout=landscape-1080p --frames=2 --fps=1 --journey=examples/radio-bubble/radio-bubble-journey.json --output-dir=video-output/skykit-studio-smoke",
+    "video:journey:preview": "node ./bin/skykit-studio-render.js --mode=preview --journey=examples/radio-bubble/radio-bubble-journey.json"
   },
   "dependencies": {
     "@found-in-space/anchored-image": "file:../skykit/packages/anchored-image",

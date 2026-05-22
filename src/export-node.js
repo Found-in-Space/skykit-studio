@@ -89,7 +89,7 @@ export function normalizeJourneyVideoCliOptions(rawArgs = process.argv.slice(2))
     : path.resolve(packageRoot, 'examples/radio-bubble/radio-bubble-journey.json');
   const outputDir = path.resolve(
     process.cwd(),
-    parsed.outputDir ?? path.join('video-output', 'journey-video', `${profile.mode}-${profile.layout.id}-${profile.fps}fps`),
+    parsed.outputDir ?? path.join('video-output', 'skykit-studio', `${profile.mode}-${profile.layout.id}-${profile.fps}fps`),
   );
   return {
     profile,
@@ -104,10 +104,10 @@ export function normalizeJourneyVideoCliOptions(rawArgs = process.argv.slice(2))
 export async function runJourneyVideoExport(options = {}) {
   const profile = normalizeJourneyVideoRenderProfile(options.profile ?? {});
   const journeyPath = path.resolve(process.cwd(), options.journeyPath ?? path.join(packageRoot, 'examples/radio-bubble/radio-bubble-journey.json'));
-  const outputDir = path.resolve(process.cwd(), options.outputDir ?? path.join('video-output', 'journey-video', `${profile.mode}-${profile.layout.id}-${profile.fps}fps`));
+  const outputDir = path.resolve(process.cwd(), options.outputDir ?? path.join('video-output', 'skykit-studio', `${profile.mode}-${profile.layout.id}-${profile.fps}fps`));
   const framesDir = path.join(outputDir, 'frames', 'sky');
   const overlaysDir = path.join(outputDir, 'overlays');
-  const videoPath = path.join(outputDir, options.videoFilename ?? `journey-video-${profile.layout.id}-${profile.mode}.mp4`);
+  const videoPath = path.join(outputDir, options.videoFilename ?? `skykit-studio-${profile.layout.id}-${profile.mode}.mp4`);
   const pageUrl = options.pageUrl ?? `http://${HOST}:${PORT}${RENDER_PAGE_PATH}`;
   const journey = JSON.parse(await readFile(journeyPath, 'utf8'));
   const overlayBlocks = createJourneyVideoOverlayBlocks(journey);
@@ -235,8 +235,8 @@ export async function runJourneyVideoExport(options = {}) {
 export async function runJourneyVideoCli(rawArgs = process.argv.slice(2)) {
   const options = normalizeJourneyVideoCliOptions(rawArgs);
   const result = await runJourneyVideoExport(options);
-  console.log(`[journey-video] wrote ${path.relative(process.cwd(), result.videoPath)}`);
-  console.log(`[journey-video] wrote ${path.relative(process.cwd(), result.metadataPath)}`);
+  console.log(`[skykit-studio] wrote ${path.relative(process.cwd(), result.videoPath)}`);
+  console.log(`[skykit-studio] wrote ${path.relative(process.cwd(), result.metadataPath)}`);
   return result;
 }
 
