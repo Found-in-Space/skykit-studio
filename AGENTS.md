@@ -5,8 +5,7 @@
 - Runtime: plain ES modules (`"type": "module"`).
 - This repository is the standalone alpha editor and deterministic export
   tooling for authored `fis-journey-v1` videos.
-- It depends on reusable SkyKit packages from the sibling `../skykit`
-  workspace through `file:` dependencies.
+- It depends on the published SkyKit alpha packages from npm.
 - Keep runtime package entry points in `src/index.js`, `src/editor.js`,
   `src/export.js`, and `src/export-node.js`, with hand-written `.d.ts`
   contracts beside them.

@@ -1,4 +1,4 @@
-# Build SkyKit Studio with a pinned SkyKit checkout and deploy to GitHub Pages.
+# Build SkyKit Studio and deploy to GitHub Pages.
 #
 # Repo settings -> Pages -> Build and deployment -> Source: GitHub Actions.
 name: Deploy SkyKit Studio Preview to GitHub Pages
@@ -17,46 +17,26 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  SKYKIT_REPOSITORY: Found-in-Space/skykit
-  SKYKIT_SHA: 0c2bd6b4a1f8b2f204f9a4b7e77042edac260852
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Check out SkyKit Studio
         uses: actions/checkout@v6
-        with:
-          path: skykit-studio
-
-      - name: Check out pinned SkyKit
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.SKYKIT_REPOSITORY }}
-          ref: ${{ env.SKYKIT_SHA }}
-          path: skykit
 
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            skykit/package-lock.json
-            skykit-studio/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
-        working-directory: skykit
-
-      - run: npm ci
-        working-directory: skykit-studio
 
       - run: npm run build
-        working-directory: skykit-studio
 
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: skykit-studio/dist
+          path: dist
 
   deploy:
     environment:
