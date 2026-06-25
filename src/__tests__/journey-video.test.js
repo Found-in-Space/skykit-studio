@@ -2,12 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createTimedJourneyEvaluator,
-  normalizeTimedJourney,
-} from '@found-in-space/journey';
-import {
   easeTimedJourneyLocationRange,
   equalizeTimedJourneyLocationRangeSpeed,
-} from '@found-in-space/journey/authoring';
+  normalizeTimedJourney,
+} from '../camera-timeline.js';
 import * as THREE from 'three';
 
 import { createJourneyVideoEditor } from '../editor.js';

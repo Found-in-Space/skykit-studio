@@ -1,11 +1,9 @@
 // @ts-nocheck
 import {
   getJourneyLocationRangeSpeedStats,
-} from '@found-in-space/journey';
-import {
   easeTimedJourneyLocationRange,
   equalizeTimedJourneyLocationRangeSpeed,
-} from '@found-in-space/journey/authoring';
+} from '../../camera-timeline.js';
 import { Camera, MapPin, Plus } from 'lucide';
 
 import {

@@ -13,13 +13,12 @@
 ## Project Boundary
 
 - `@found-in-space/spatial` owns path and coordinate math.
-- `@found-in-space/journey` owns journey schema, timed evaluation, and retiming
-  helpers.
 - `@found-in-space/skykit` owns viewer composition.
 - `@found-in-space/skykit-studio` owns editor state, DOM layout, projection
-  tiles, inspector state, import/export, draft storage, deterministic render
-  pages, overlay block assets, ffmpeg argument construction, and export
-  metadata.
+  tiles, inspector state, `fis-journey-v1` camera timeline
+  normalization/evaluation, retiming helpers, import/export, draft storage,
+  deterministic render pages, overlay block assets, ffmpeg argument
+  construction, and export metadata.
 - Do not import website Astro code or old SkyKit runtime internals into this
   package.
 - Put reusable viewer/runtime behavior in `../skykit` only when it has a clear

@@ -1,4 +1,4 @@
-import { normalizeTimedJourney } from '@found-in-space/journey';
+import { normalizeTimedJourney } from './camera-timeline.js';
 
 export const SKYKIT_STUDIO_EXPORT_PACKAGE_STATUS = 'alpha-export';
 

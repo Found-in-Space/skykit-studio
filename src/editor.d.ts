@@ -1,7 +1,7 @@
 import type {
   TimedJourney,
   TimedJourneyFrame,
-} from '@found-in-space/journey';
+} from './camera-timeline.js';
 import type {
   JourneyVideoEditorDocument,
   JourneyVideoEditorState,

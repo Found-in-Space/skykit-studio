@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 
-import { createTimedJourneyEvaluator } from '@found-in-space/journey';
 import {
   createObject3dPlugin,
   createSkykitViewer,
@@ -17,6 +16,7 @@ import {
   createJourneyVideoGuideGroup,
   createJourneyVideoWorld,
 } from '../../src/world.js';
+import { createTimedJourneyEvaluator } from '../../src/camera-timeline.js';
 
 const DEFAULT_COORDINATE_UNITS_PER_PARSEC = 0.02;
 const DEFAULT_LIMITING_MAGNITUDE = 6.5;

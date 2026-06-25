@@ -78,11 +78,10 @@ import { runJourneyVideoExport } from '@found-in-space/skykit-studio/export/node
 ## Package Boundary
 
 - `@found-in-space/spatial` owns path and coordinate math.
-- `@found-in-space/journey` owns journey schema, timed evaluation, and retiming
-  helpers.
 - `@found-in-space/skykit` owns viewer composition.
 - `@found-in-space/skykit-studio` owns editor state, DOM layout, tiles,
-  inspector state, import/export, draft storage, deterministic render pages,
+  inspector state, `fis-journey-v1` camera timeline normalization/evaluation,
+  retiming helpers, import/export, draft storage, deterministic render pages,
   overlay block assets, ffmpeg argument construction, and export metadata.
 
 No website Astro code or old SkyKit runtime code is imported here.

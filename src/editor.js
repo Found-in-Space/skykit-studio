@@ -2,14 +2,12 @@
 
 import {
   createTimedJourneyEvaluator,
-  normalizeTimedJourney,
-} from '@found-in-space/journey';
-import {
   deleteTimedJourneyEaseGroup,
   easeTimedJourneyLocationRange,
   equalizeTimedJourneyLocationRangeSpeed,
+  normalizeTimedJourney,
   rebuildTimedJourneyEaseGroup,
-} from '@found-in-space/journey/authoring';
+} from './camera-timeline.js';
 
 import {
   createJourneyVideoEditorDocument,

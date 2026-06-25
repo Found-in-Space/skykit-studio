@@ -1,7 +1,7 @@
 import {
   FIS_JOURNEY_FORMAT,
   normalizeTimedJourney,
-} from '@found-in-space/journey';
+} from './camera-timeline.js';
 import {
   DEFAULT_JOURNEY_VIDEO_EDITOR_PANE_LAYOUT,
   DEFAULT_JOURNEY_VIDEO_EDITOR_PANES,

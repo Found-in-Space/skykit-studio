@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createTimedJourneyEvaluator, normalizeTimedJourney } from '@found-in-space/journey';
+import { createTimedJourneyEvaluator, normalizeTimedJourney } from '../camera-timeline.js';
 
 const DEFAULT_AXES = Object.freeze({
   xy: Object.freeze(['x', 'y']),
@@ -20,8 +20,8 @@ export function createJourneyEditorProjectionData(journeyInput, options = {}) {
 }
 
 /**
- * @param {import('@found-in-space/journey').TimedJourney} journey
- * @param {import('@found-in-space/journey').TimedJourneyFrame[]} samples
+ * @param {import('../camera-timeline.js').TimedJourney} journey
+ * @param {import('../camera-timeline.js').TimedJourneyFrame[]} samples
  */
 export function computeJourneyBounds(journey, samples = []) {
   const points = [
