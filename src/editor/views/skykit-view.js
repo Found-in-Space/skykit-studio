@@ -31,6 +31,7 @@ export function createSkykitView() {
   let provider = null;
   let renderer = null;
   let camera = null;
+  let viewportSize = undefined;
   let pendingSnapshot = /** @type {import('../views.js').JourneyVideoEditorViewSnapshot | null} */ (null);
   const guideGroup = new THREE.Group();
   guideGroup.name = 'journey-video-editor-guides';
@@ -82,6 +83,7 @@ export function createSkykitView() {
           return;
         }
         viewer = created;
+        viewer.resize?.(viewportSize);
         loop = createSkykitAnimationLoop(viewer, { render: true });
         loop.start();
         ready = true;
@@ -93,7 +95,8 @@ export function createSkykitView() {
       if (ready) applySkykitState();
     },
     resize(size) {
-      viewer?.resize?.(normalizeViewportSize(size));
+      viewportSize = normalizeViewportSize(size);
+      viewer?.resize?.(viewportSize);
     },
     async dispose() {
       disposed = true;
@@ -112,6 +115,7 @@ export function createSkykitView() {
       camera = null;
       axisIndicator = null;
       shell = null;
+      viewportSize = undefined;
       pendingSnapshot = null;
     },
   };
@@ -125,7 +129,6 @@ export function createSkykitView() {
       targetPc: pendingSnapshot.evaluated.targetPc,
       limitingMagnitude: pendingSnapshot.world.limitingMagnitude,
     }, 'journey-video-editor');
-    viewer.resize();
     axisIndicator?.renderCamera(viewer.camera);
   }
 }
